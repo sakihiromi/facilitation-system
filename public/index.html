@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AIファシリテーション - はたらくウェルビーイング</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+  <div class="app-container">
+    <!-- サイドバー -->
+    <aside class="sidebar">
+      <div class="logo">
+        <div class="logo-icon">🌱</div>
+        <h1>Well-being<br>Facilitation</h1>
+      </div>
+
+      <nav class="week-nav">
+        <div class="week-nav-title">セッション</div>
+        <button class="week-btn" data-week="1">
+          <span class="week-number">1</span>
+          <span class="week-label">
+            <span class="week-title">1週目 1on1</span>
+            <span class="week-theme">はたらくウェルビーイング</span>
+          </span>
+          <span class="perspective-badge perspective-i">I</span>
+        </button>
+        <button class="week-btn" data-week="2">
+          <span class="week-number">2</span>
+          <span class="week-label">
+            <span class="week-title">2週目 1on1</span>
+            <span class="week-theme">あなたの仕事</span>
+          </span>
+          <span class="perspective-badge perspective-we">WE</span>
+        </button>
+        <button class="week-btn" data-week="3">
+          <span class="week-number">3</span>
+          <span class="week-label">
+            <span class="week-title">3週目 1on1</span>
+            <span class="week-theme">あなたの会社</span>
+          </span>
+          <span class="perspective-badge perspective-s">S</span>
+        </button>
+        <button class="week-btn" data-week="4">
+          <span class="week-number">4</span>
+          <span class="week-label">
+            <span class="week-title">4週目 1on1</span>
+            <span class="week-theme">統合・行動プラン</span>
+          </span>
+          <span class="perspective-badge perspective-int">統合</span>
+        </button>
+      </nav>
+
+      <div class="user-section">
+        <div class="user-info">
+          <div class="user-avatar">👤</div>
+          <div class="user-name" id="userNameDisplay">ゲスト</div>
+        </div>
+        <button class="settings-btn" id="settingsBtn">⚙️</button>
+      </div>
+    </aside>
+
+    <!-- メインコンテンツ -->
+    <main class="main-content">
+      <!-- ウェルカム画面 -->
+      <div class="welcome-screen" id="welcomeScreen">
+        <div class="welcome-content">
+          <div class="welcome-icon">🌿</div>
+          <h2>AIファシリテーションへようこそ</h2>
+          <p class="welcome-description">
+            4週間にわたる1on1セッションを通じて、<br>
+            あなたの「はたらくウェルビーイング」を探求しましょう。
+          </p>
+
+          <div class="journey-preview">
+            <div class="journey-item">
+              <div class="journey-week">Week 1</div>
+              <div class="journey-title">「I」の問い</div>
+              <div class="journey-desc">あなた自身の価値観</div>
+            </div>
+            <div class="journey-arrow">→</div>
+            <div class="journey-item">
+              <div class="journey-week">Week 2</div>
+              <div class="journey-title">「WE」の問い</div>
+              <div class="journey-desc">チーム・本部の中で</div>
+            </div>
+            <div class="journey-arrow">→</div>
+            <div class="journey-item">
+              <div class="journey-week">Week 3</div>
+              <div class="journey-title">「S」の問い</div>
+              <div class="journey-desc">会社・社会の視点</div>
+            </div>
+            <div class="journey-arrow">→</div>
+            <div class="journey-item">
+              <div class="journey-week">Week 4</div>
+              <div class="journey-title">統合フェーズ</div>
+              <div class="journey-desc">行動プランへ</div>
+            </div>
+          </div>
+
+          <div class="setup-form" id="setupForm">
+            <div class="form-group">
+              <label for="userName">お名前</label>
+              <input type="text" id="userName" placeholder="お名前を入力してください">
+            </div>
+            <div class="form-group">
+              <label for="priorInfo">事前情報（任意）</label>
+              <textarea id="priorInfo" placeholder="理想の働き方、大切にしている価値観などがあれば教えてください..."></textarea>
+            </div>
+            <div class="form-group">
+              <label for="conversationMode">会話モード</label>
+              <div class="mode-selector">
+                <label class="mode-option">
+                  <input type="radio" name="conversationMode" value="light">
+                  <div class="mode-card">
+                    <div class="mode-name">💬 ライト</div>
+                    <div class="mode-desc">気軽に話す</div>
+                  </div>
+                </label>
+                <label class="mode-option">
+                  <input type="radio" name="conversationMode" value="standard" checked>
+                  <div class="mode-card">
+                    <div class="mode-name">⚖️ スタンダード</div>
+                    <div class="mode-desc">バランス型</div>
+                  </div>
+                </label>
+                <label class="mode-option">
+                  <input type="radio" name="conversationMode" value="deep">
+                  <div class="mode-card">
+                    <div class="mode-name">🔍 ディープ</div>
+                    <div class="mode-desc">じっくり探求</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="sessionLength">会話の長さ</label>
+              <div class="mode-selector">
+                <label class="mode-option">
+                  <input type="radio" name="sessionLength" value="short">
+                  <div class="mode-card">
+                    <div class="mode-name">⚡ 短め</div>
+                    <div class="mode-desc">10-15分</div>
+                  </div>
+                </label>
+                <label class="mode-option">
+                  <input type="radio" name="sessionLength" value="medium" checked>
+                  <div class="mode-card">
+                    <div class="mode-name">⏱️ 標準</div>
+                    <div class="mode-desc">20-30分</div>
+                  </div>
+                </label>
+                <label class="mode-option">
+                  <input type="radio" name="sessionLength" value="long">
+                  <div class="mode-card">
+                    <div class="mode-name">🕐 長め</div>
+                    <div class="mode-desc">40-60分</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+            <button class="start-btn" id="startFirstSession">
+              1週目のセッションを始める
+              <span class="btn-arrow">→</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- チャット画面 -->
+      <div class="chat-screen" id="chatScreen" style="display: none;">
+        <div class="chat-header">
+          <div class="chat-header-info">
+            <div class="session-badge" id="sessionBadge">Week 1</div>
+            <h2 id="sessionTheme">あなたの"はたらくウェルビーイング"は？</h2>
+          </div>
+          <div class="chat-header-actions">
+            <span class="timer" id="sessionTimer">00:00</span>
+            <button class="end-session-btn" id="endSessionBtn">セッション終了</button>
+          </div>
+        </div>
+
+        <div class="chat-messages" id="chatMessages">
+          <!-- メッセージがここに追加される -->
+        </div>
+
+        <div class="chat-input-area">
+          <div class="input-container">
+            <textarea id="messageInput" placeholder="メッセージを入力してください..." rows="1"></textarea>
+            <button class="send-btn" id="sendBtn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 2L11 13M22 2L15 22L11 13L2 9L22 2Z" />
+              </svg>
+            </button>
+          </div>
+          <div class="input-hint">Enterで送信 / Shift+Enterで改行</div>
+        </div>
+      </div>
+
+      <!-- 記事プレビュー画面 -->
+      <div class="article-screen" id="articleScreen" style="display: none;">
+        <div class="article-header">
+          <button class="back-btn" id="backToHome">← ホームに戻る</button>
+          <h2>セッション記録</h2>
+        </div>
+        <div class="article-content" id="articleContent">
+          <!-- 記事コンテンツがここに表示される -->
+        </div>
+        <div class="article-actions">
+          <button class="next-session-btn" id="nextSessionBtn" style="display: none;">
+            次週のセッションへ進む →
+          </button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ローディングオーバーレイ -->
+  <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+    <div class="loading-spinner"></div>
+    <div class="loading-text">考え中...</div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+
+</html>

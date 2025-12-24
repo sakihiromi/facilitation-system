@@ -33,25 +33,33 @@
           <span class="perspective-badge perspective-i">I</span>
         </button>
         <button class="week-btn" data-week="2">
-          <span class="week-number">2</span>
+          <span class="week-number">☕</span>
           <span class="week-label">
-            <span class="week-title">2週目 1on1</span>
-            <span class="week-theme">あなたの仕事</span>
+            <span class="week-title">雑談会</span>
+            <span class="week-theme">フィードバック＆占い</span>
           </span>
-          <span class="perspective-badge perspective-we">WE</span>
+          <span class="perspective-badge perspective-chat">Chat</span>
         </button>
         <button class="week-btn" data-week="3">
           <span class="week-number">3</span>
           <span class="week-label">
             <span class="week-title">3週目 1on1</span>
-            <span class="week-theme">あなたの会社</span>
+            <span class="week-theme">あなたの仕事</span>
           </span>
-          <span class="perspective-badge perspective-s">S</span>
+          <span class="perspective-badge perspective-we">WE</span>
         </button>
         <button class="week-btn" data-week="4">
           <span class="week-number">4</span>
           <span class="week-label">
             <span class="week-title">4週目 1on1</span>
+            <span class="week-theme">あなたの会社</span>
+          </span>
+          <span class="perspective-badge perspective-s">S</span>
+        </button>
+        <button class="week-btn" data-week="5">
+          <span class="week-number">5</span>
+          <span class="week-label">
+            <span class="week-title">5週目 1on1</span>
             <span class="week-theme">統合・行動プラン</span>
           </span>
           <span class="perspective-badge perspective-int">統合</span>
@@ -104,6 +112,9 @@
               <div class="journey-desc">行動プランへ</div>
             </div>
           </div>
+
+          <!-- 占術選択モーダル -->
+
 
           <div class="setup-form" id="setupForm">
             <div class="form-group">
@@ -173,7 +184,70 @@
           </div>
         </div>
       </div>
+      <div class="modal-overlay" id="fortuneModal" style="display: none;">
+        <div class="modal-content modal-large">
+          <h3>占いの種類を選んでください</h3>
+          <p>30種類以上の占術から選べます（複数選択可）</p>
 
+          <!-- お任せ・おすすめコース -->
+          <div class="fortune-presets">
+            <button class="preset-btn" data-preset="omakase">
+              <span class="preset-icon">🎲</span>
+              <span class="preset-name">お任せ占い</span>
+              <span class="preset-desc">AIがあなたに合った占術を選びます</span>
+            </button>
+            <button class="preset-btn" data-preset="popular">
+              <span class="preset-icon">⭐</span>
+              <span class="preset-name">人気コース</span>
+              <span class="preset-desc">タロット＋西洋占星術＋数秘術</span>
+            </button>
+            <button class="preset-btn" data-preset="eastern">
+              <span class="preset-icon">🎋</span>
+              <span class="preset-name">東洋占術コース</span>
+              <span class="preset-desc">四柱推命＋九星気学＋易占い</span>
+            </button>
+            <button class="preset-btn" data-preset="deep">
+              <span class="preset-icon">🔮</span>
+              <span class="preset-name">深層理解コース</span>
+              <span class="preset-desc">MBTI＋エニアグラム＋オーラリーディング</span>
+            </button>
+          </div>
+
+          <div class="divider">または個別に選択</div>
+
+          <!-- カテゴリータブ -->
+          <div class="fortune-tabs">
+            <button class="fortune-tab active" data-category="all">すべて</button>
+            <button class="fortune-tab" data-category="western">西洋系</button>
+            <button class="fortune-tab" data-category="eastern">東洋系</button>
+            <button class="fortune-tab" data-category="birthday">誕生日系</button>
+            <button class="fortune-tab" data-category="psychology">心理診断系</button>
+            <button class="fortune-tab" data-category="other">その他</button>
+          </div>
+
+          <!-- 検索バー -->
+          <input type="text" id="fortuneSearch" placeholder="占術を検索..." class="fortune-search">
+
+          <!-- 選択中の占術表示 -->
+          <div class="selected-fortunes" id="selectedFortunes" style="display: none;">
+            <div class="selected-label">選択中:</div>
+            <div class="selected-tags" id="selectedTags"></div>
+          </div>
+
+          <!-- 占術グリッド -->
+          <div class="fortune-grid" id="fortuneGrid">
+            <!-- JavaScriptで動的に生成 -->
+          </div>
+
+          <div class="button-group">
+            <button class="btn btn-secondary" id="clearFortuneBtn">選択をクリア</button>
+            <button class="btn btn-primary" id="confirmFortuneBtn" disabled>
+              選択した占いを始める (<span id="fortuneCount">0</span>)
+            </button>
+            <button class="btn btn-secondary" id="cancelFortuneBtn">キャンセル</button>
+          </div>
+        </div>
+      </div>
       <!-- チャット画面 -->
       <div class="chat-screen" id="chatScreen" style="display: none;">
         <div class="chat-header">
@@ -183,6 +257,7 @@
           </div>
           <div class="chat-header-actions">
             <span class="timer" id="sessionTimer">00:00</span>
+            <button class="save-session-btn" id="saveSessionBtn" title="セッションを保存">💾</button>
             <button class="end-session-btn" id="endSessionBtn">セッション終了</button>
           </div>
         </div>
@@ -222,12 +297,95 @@
     </main>
   </div>
 
+  <!-- セッション設定モーダル -->
+  <div class="modal-overlay" id="sessionModal" style="display: none;">
+    <div class="modal-content">
+      <h3 id="modalTitle">Week 1 セッション設定</h3>
+
+      <!-- 既存セッションがある場合の選択 -->
+      <div id="existingSessionOptions" style="display: none;">
+        <div class="session-resume-info">
+          <p>前回の続きから始めますか？</p>
+          <div class="session-info">
+            <div id="sessionInfoDetails"></div>
+          </div>
+        </div>
+        <div class="button-group">
+          <button class="btn btn-primary" id="resumeSessionBtn">続きから始める</button>
+          <button class="btn btn-secondary" id="startNewSessionBtn">最初から始める</button>
+        </div>
+        <hr style="margin: 20px 0;">
+      </div>
+
+      <!-- 新規セッション設定 -->
+      <div id="newSessionOptions">
+        <div class="form-group">
+          <label>会話モード</label>
+          <div class="mode-selector">
+            <label class="mode-option">
+              <input type="radio" name="modalConversationMode" value="light">
+              <div class="mode-card">
+                <div class="mode-name">💬 ライト</div>
+                <div class="mode-desc">気軽に話す</div>
+              </div>
+            </label>
+            <label class="mode-option">
+              <input type="radio" name="modalConversationMode" value="standard" checked>
+              <div class="mode-card">
+                <div class="mode-name">⚖️ スタンダード</div>
+                <div class="mode-desc">バランス型</div>
+              </div>
+            </label>
+            <label class="mode-option">
+              <input type="radio" name="modalConversationMode" value="deep">
+              <div class="mode-card">
+                <div class="mode-name">🔍 ディープ</div>
+                <div class="mode-desc">じっくり探求</div>
+              </div>
+            </label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>会話の長さ</label>
+          <div class="mode-selector">
+            <label class="mode-option">
+              <input type="radio" name="modalSessionLength" value="short">
+              <div class="mode-card">
+                <div class="mode-name">⚡ 短め</div>
+                <div class="mode-desc">10-15分</div>
+              </div>
+            </label>
+            <label class="mode-option">
+              <input type="radio" name="modalSessionLength" value="medium" checked>
+              <div class="mode-card">
+                <div class="mode-name">⏱️ 標準</div>
+                <div class="mode-desc">20-30分</div>
+              </div>
+            </label>
+            <label class="mode-option">
+              <input type="radio" name="modalSessionLength" value="long">
+              <div class="mode-card">
+                <div class="mode-name">🕐 長め</div>
+                <div class="mode-desc">40-60分</div>
+              </div>
+            </label>
+          </div>
+        </div>
+        <div class="button-group">
+          <button class="btn btn-primary" id="startSessionFromModalBtn">セッション開始</button>
+          <button class="btn btn-secondary" id="cancelModalBtn">キャンセル</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ローディングオーバーレイ -->
   <div class="loading-overlay" id="loadingOverlay" style="display: none;">
     <div class="loading-spinner"></div>
     <div class="loading-text">考え中...</div>
   </div>
 
+  <script src="fortune.js"></script>
   <script src="app.js"></script>
 </body>
 

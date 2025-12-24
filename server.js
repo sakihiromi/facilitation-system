@@ -1,12 +1,20 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
+const https = require('https');
 require('dotenv').config();
 
 const OpenAI = require('openai');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// 画像保存用ディレクトリを作成
+const imagesDir = path.join(__dirname, 'public', 'images');
+if (!fs.existsSync(imagesDir)) {
+  fs.mkdirSync(imagesDir, { recursive: true });
+}
 
 app.use(cors());
 app.use(express.json());
@@ -68,7 +76,11 @@ const sessionLengths = {
     name: '標準',
     description: '20-30分',
     targetMinutes: 25,
-    modifier: '' // デフォルト
+    modifier: `
+【セッション時間の調整】
+- このセッションは20-30分程度を想定しています
+- 15-20回程度のやり取りで完結することを目指してください
+- バランスよく対話を進めてください`
   },
   long: {
     name: '長め',
@@ -77,6 +89,7 @@ const sessionLengths = {
     modifier: `
 【セッション時間の調整】
 - このセッションは40-60分程度を想定しています
+- 25-35回程度のやり取りで完結することを目指してください
 - じっくりと時間をかけて対話を深めてください
 - 一つ一つのテーマを丁寧に掘り下げてください
 - 急がず、相手のペースに合わせて進めてください
@@ -92,29 +105,29 @@ const weeklyConfig = {
     systemPrompt: `あなたは優秀なAIファシリテーターです。温かく、共感的で、相手の本質を引き出すことに長けています。
 
 【今週のテーマ】
-「あなたの"はたらくウェルビーイング"は？」
+「あなたの\"はたらくウェルビーイング\"は？」
 「I」（個人）の視点から、参加者の内面にある価値観やウェルビーイングを丁寧に探求します。
 
 【ファシリテーションの原則】
-1. **傾聴と共感**: 相手の言葉を丁寧に受け止め、その背景にある想いや感情に寄り添う
-2. **安心安全な場づくり**: 評価せず、ありのままを受け入れる姿勢を示す
-3. **本質への深堀り**: 表面的な答えに留まらず、「なぜ？」「それはどういうこと？」と優しく掘り下げる
-4. **具体と抽象の往復**: 具体的なエピソードと抽象的な価値観を行き来する
+1. **まず受け止める**: 相手の言葉をそのまま受け止め、評価や判断をせず、ありのままを受け入れる
+2. **共感を示す**: 相手の想いや感情に寄り添い、「そうなんですね」「大切にされているんですね」と共感する
+3. **相手の言葉から次を紡ぐ**: 定型的な質問は避け、相手が話した言葉の中から自然に次の問いを見つける
+4. **問いは自然に生まれる**: 「なぜ？」と聞く前に、まず相手の言葉を丁寧に受け止める。問いは対話の流れから自然に生まれる
 
-【質問の進め方】
-- まずは挨拶と自己紹介から始め、リラックスした雰囲気を作る
-- 「あなた自身が生きるうえで大切にしていることは何ですか？」から対話を始める
-- 答えに対して「それはなぜですか？」「具体的にはどんな時にそう感じますか？」と深堀りする
-- 「働くうえで大切にしていること」へと自然に展開する
-- 「もし〇〇だったら、それでも大切ですか？」のような輪郭を探る質問で価値観を明確化する
-- 矛盾や葛藤が見えたら、それを優しく指摘し、一緒に考える
+【対話の心得】
+- 定型的な質問パターンは使わない
+- 相手の言葉を丁寧に受け止め、その中から次の問いを見つける
+- 質問する前に、まず共感を示す
+- 沈黙を恐れず、相手が考える時間を大切にする
+- 相手のペースを最優先に、急がない
+- 具体的なエピソードと抽象的な価値観を自然に行き来する
 
 【対話のスタイル】
 - 1回の発言は100-200文字程度に抑え、相手が話す時間を大切にする
-- 相手の言葉を言い換えて確認する（「つまり〇〇ということですね」）
-- 共感を示す言葉を適切に使う（「そうなんですね」「大切にされているんですね」）
-- 急がず、相手のペースに合わせる
-- 沈黙も大切にし、相手が考える時間を尊重する
+- 相手の言葉をそのまま受け止め、言い換えて確認する（「つまり〇〇ということですね」）
+- 「そうなんですね」「なるほど」「大切にされているんですね」など、まず共感する
+- 質問は相手の言葉の中から自然に生まれるものだけにする
+- 沈黙も対話の一部として大切にする
 
 【今週の目標】
 参加者が自分自身の価値観やウェルビーイングについて、新たな気づきを得られること。`
@@ -476,6 +489,7 @@ ${session.theme}（${session.perspective}の視点）
 
     // イメージを生成
     let imageUrl = null;
+    let localImagePath = null;
     try {
       const imagePrompt = generateImagePrompt(session.week, session.perspective, session.theme);
       const imageResponse = await openai.images.generate({
@@ -487,19 +501,30 @@ ${session.theme}（${session.perspective}の視点）
       });
 
       imageUrl = imageResponse.data[0].url;
+
+      // 一時URLから画像をダウンロードしてローカルに保存
+      try {
+        localImagePath = await downloadAndSaveImage(imageUrl, session.sessionId);
+        console.log('Image saved locally:', localImagePath);
+      } catch (downloadError) {
+        console.error('Image download error:', downloadError);
+        // ダウンロードに失敗した場合は一時URLを使用
+        localImagePath = imageUrl;
+      }
     } catch (imageError) {
       console.error('Image generation error:', imageError);
       // イメージ生成に失敗しても記事は返す
     }
 
-    // イメージを記事に埋め込む
+    // イメージを記事に埋め込む（ローカルパスを使用）
     let finalArticle = article;
-    if (imageUrl) {
+    const displayImageUrl = localImagePath || imageUrl;
+    if (displayImageUrl) {
       // タイトルの後にイメージを挿入
       const lines = article.split('\n');
       const titleIndex = lines.findIndex(line => line.startsWith('# '));
       if (titleIndex !== -1) {
-        lines.splice(titleIndex + 1, 0, '', `![セッションのイメージ](${imageUrl})`, '');
+        lines.splice(titleIndex + 1, 0, '', `![セッションのイメージ](${displayImageUrl})`, '');
         finalArticle = lines.join('\n');
       }
     }
@@ -509,7 +534,7 @@ ${session.theme}（${session.perspective}の視点）
       article: finalArticle,
       week: session.week,
       theme: session.theme,
-      imageUrl
+      imageUrl: displayImageUrl
     });
   } catch (error) {
     console.error('OpenAI API Error:', error);
@@ -529,6 +554,40 @@ function generateImagePrompt(week, perspective, theme) {
   };
 
   return weekPrompts[week] || weekPrompts[1];
+}
+
+// 画像をダウンロードしてローカルに保存する関数
+async function downloadAndSaveImage(imageUrl, sessionId) {
+  return new Promise((resolve, reject) => {
+    const filename = `session_${sessionId}_${Date.now()}.png`;
+    const filepath = path.join(imagesDir, filename);
+    const file = fs.createWriteStream(filepath);
+
+    https.get(imageUrl, (response) => {
+      // リダイレクトに対応
+      if (response.statusCode === 301 || response.statusCode === 302) {
+        https.get(response.headers.location, (redirectedResponse) => {
+          redirectedResponse.pipe(file);
+          file.on('finish', () => {
+            file.close();
+            resolve(`/images/${filename}`);
+          });
+        }).on('error', (err) => {
+          fs.unlink(filepath, () => {}); // ファイルを削除
+          reject(err);
+        });
+      } else {
+        response.pipe(file);
+        file.on('finish', () => {
+          file.close();
+          resolve(`/images/${filename}`);
+        });
+      }
+    }).on('error', (err) => {
+      fs.unlink(filepath, () => {}); // ファイルを削除
+      reject(err);
+    });
+  });
 }
 
 // セッション一覧取得

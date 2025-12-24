@@ -748,6 +748,18 @@ body {
   border-bottom: 3px solid var(--primary-color);
 }
 
+/* 記事内の画像スタイル */
+.article-content .article-image {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-md);
+  margin: 24px 0;
+  box-shadow: var(--shadow-md);
+  object-fit: cover;
+}
+
 .article-content h2 {
   font-size: 20px;
   font-weight: 600;

@@ -429,6 +429,8 @@ function showLoading(show) {
 
 function markdownToHtml(markdown) {
   return markdown
+    // Images - ![alt](url) を <img> タグに変換
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/gim, '<img src="$2" alt="$1" class="article-image" loading="lazy">')
     // Headers
     .replace(/^### (.*$)/gim, '<h3>$1</h3>')
     .replace(/^## (.*$)/gim, '<h2>$1</h2>')
@@ -442,7 +444,7 @@ function markdownToHtml(markdown) {
     // Paragraphs
     .split('\n\n')
     .map(p => {
-      if (p.startsWith('<h') || p.startsWith('<li')) return p;
+      if (p.startsWith('<h') || p.startsWith('<li') || p.startsWith('<img')) return p;
       return `<p>${p.replace(/\n/g, '<br>')}</p>`;
     })
     .join('\n')

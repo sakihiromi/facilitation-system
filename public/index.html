@@ -73,6 +73,16 @@
         </div>
         <button class="settings-btn" id="settingsBtn">⚙️</button>
       </div>
+
+      <button class="report-export-btn" id="reportExportBtn" title="人事向け詳細レポートを出力">
+        <span class="export-icon">📊</span>
+        <span>レポート出力</span>
+      </button>
+
+      <button class="git-sync-btn" id="gitSyncBtn" title="データをGitと同期">
+        <span class="sync-icon">🔄</span>
+        <span>Git同期</span>
+      </button>
     </aside>
 
     <!-- メインコンテンツ -->
@@ -257,6 +267,13 @@
           </div>
           <div class="chat-header-actions">
             <span class="timer" id="sessionTimer">00:00</span>
+            <div class="tts-controls">
+              <label class="tts-toggle" title="読み上げ ON/OFF">
+                <input type="checkbox" id="ttsEnabled" checked>
+                <span class="tts-slider">🔊</span>
+              </label>
+              <button class="tts-stop-btn" id="ttsStopBtn" title="読み上げ停止" style="display: none;">⏹️</button>
+            </div>
             <button class="save-session-btn" id="saveSessionBtn" title="セッションを保存">💾</button>
             <button class="end-session-btn" id="endSessionBtn">セッション終了</button>
           </div>
@@ -268,6 +285,14 @@
 
         <div class="chat-input-area">
           <div class="input-container">
+            <button class="voice-btn" id="voiceBtn" title="音声入力（押して話す）">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+                <line x1="8" y1="23" x2="16" y2="23"/>
+              </svg>
+            </button>
             <textarea id="messageInput" placeholder="メッセージを入力してください..." rows="1"></textarea>
             <button class="send-btn" id="sendBtn">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -275,7 +300,7 @@
               </svg>
             </button>
           </div>
-          <div class="input-hint">Enterで送信 / Shift+Enterで改行</div>
+          <div class="input-hint">Enterで送信 / Shift+Enterで改行 / 🎤ボタンで音声入力</div>
         </div>
       </div>
 
@@ -374,6 +399,30 @@
         <div class="button-group">
           <button class="btn btn-primary" id="startSessionFromModalBtn">セッション開始</button>
           <button class="btn btn-secondary" id="cancelModalBtn">キャンセル</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- アンケートモーダル -->
+  <div class="modal-overlay" id="surveyModal" style="display: none;">
+    <div class="modal-content modal-survey">
+      <div class="survey-container">
+        <div class="survey-header">
+          <h3>📝 セッション後アンケート</h3>
+          <p>今後のサービス改善のため、ご協力をお願いします</p>
+        </div>
+        <div class="survey-disclaimer">
+          <strong>🔒 プライバシーについて</strong><br>
+          このアンケートの回答内容は、効果測定・サービス改善の目的でのみ使用されます。<br>
+          <strong>回答結果は個人を特定しない形で集計され、外部に公開されることはありません。</strong>
+        </div>
+        <div class="survey-questions" id="surveyQuestions">
+          <!-- 設問がここに動的に生成される -->
+        </div>
+        <div class="button-group">
+          <button class="btn btn-primary" id="submitSurveyBtn">回答を送信</button>
+          <button class="btn btn-secondary" id="skipSurveyBtn">スキップ</button>
         </div>
       </div>
     </div>

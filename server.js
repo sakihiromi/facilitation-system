@@ -3,12 +3,13 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
-require('dotenv').config();
+// Load .env from anken root
+require('dotenv').config({ path: path.join(__dirname, '..', '..', '.env') });
 
 const OpenAI = require('openai');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.FACILITATION_PORT || 3000;
 
 // 画像保存用ディレクトリを作成
 const imagesDir = path.join(__dirname, 'public', 'images');
@@ -20,6 +21,12 @@ if (!fs.existsSync(imagesDir)) {
 const sessionsDir = path.join(__dirname, 'data', 'sessions');
 if (!fs.existsSync(sessionsDir)) {
   fs.mkdirSync(sessionsDir, { recursive: true });
+}
+
+// 出力レポート保存用ディレクトリを作成
+const outputDir = path.join(__dirname, 'output');
+if (!fs.existsSync(outputDir)) {
+  fs.mkdirSync(outputDir, { recursive: true });
 }
 
 app.use(cors());
@@ -79,6 +86,89 @@ function findUserWeekSessions(userId, week) {
     console.error('Session search error:', error);
     return null;
   }
+}
+
+// 前回のアンケート結果を取得
+function getPreviousSurveyResults(userId, currentWeek) {
+  const surveysDir = path.join(__dirname, 'data', 'surveys');
+  if (!fs.existsSync(surveysDir)) return null;
+
+  try {
+    const files = fs.readdirSync(surveysDir);
+    // 前の週のアンケートを探す
+    const previousWeek = currentWeek - 1;
+    if (previousWeek < 1) return null;
+
+    const pattern = `survey_${userId}_week${previousWeek}_`;
+    const matchingFiles = files.filter(f => f.startsWith(pattern) && f.endsWith('.json'));
+
+    if (matchingFiles.length > 0) {
+      // 最新のアンケートを取得
+      const sortedFiles = matchingFiles.sort().reverse();
+      const filepath = path.join(surveysDir, sortedFiles[0]);
+      const data = fs.readFileSync(filepath, 'utf-8');
+      return JSON.parse(data);
+    }
+    return null;
+  } catch (error) {
+    console.error('Survey load error:', error);
+    return null;
+  }
+}
+
+// アンケート結果をプロンプト用のテキストに変換
+function formatSurveyFeedback(surveyData) {
+  if (!surveyData || !surveyData.responses) return '';
+
+  const responses = surveyData.responses;
+  let feedback = '\n\n【前回セッションのフィードバック】\n';
+  feedback += '参加者からのアンケート回答を踏まえて、今回のセッションを調整してください：\n';
+
+  // 満足度
+  if (responses.satisfaction) {
+    const level = responses.satisfaction;
+    if (level <= 2) {
+      feedback += '- 前回の満足度が低めでした。より丁寧に、参加者のペースに合わせて進めてください。\n';
+    } else if (level >= 4) {
+      feedback += '- 前回は満足度が高かったです。同じ調子で進めましょう。\n';
+    }
+  }
+
+  // 気づき
+  if (responses.awareness) {
+    const level = responses.awareness;
+    if (level <= 2) {
+      feedback += '- 前回は新しい気づきが少なかったようです。より深い質問や、異なる視点からの問いかけを心がけてください。\n';
+    } else if (level >= 4) {
+      feedback += '- 前回は多くの気づきがあったようです。今回も深い対話を続けましょう。\n';
+    }
+  }
+
+  // 話しやすさ
+  if (responses.ease) {
+    const level = responses.ease;
+    if (level <= 2) {
+      feedback += '- 前回は話しにくさを感じていたようです。より受容的な姿勢で、ゆっくりとしたペースで進めてください。共感の言葉を多めに使い、沈黙も大切にしてください。\n';
+    } else if (level >= 4) {
+      feedback += '- 前回は話しやすかったようです。リラックスした雰囲気を維持しましょう。\n';
+    }
+  }
+
+  // 次回への意欲
+  if (responses.motivation) {
+    const level = responses.motivation;
+    if (level <= 2) {
+      feedback += '- 次回への意欲が低めでした。今回は特に楽しく、価値のある対話になるよう心がけてください。小さな成功体験を提供しましょう。\n';
+    }
+  }
+
+  // 自由記述のフィードバック
+  if (responses.feedback) {
+    feedback += `- 参加者からのコメント: 「${responses.feedback}」\n`;
+    feedback += '  このフィードバックを考慮して、対話スタイルを調整してください。\n';
+  }
+
+  return feedback;
 }
 
 // 占術の種類定義
@@ -228,6 +318,26 @@ const weeklyConfig = {
 「あなたの\"はたらくウェルビーイング\"は？」
 「I」（個人）の視点から、参加者の内面にある価値観やウェルビーイングを丁寧に探求します。
 
+【参考：全社員調査で多く挙がった価値観キーワード】
+以下は過去の調査で社員が大切にしていると回答した価値観です。対話の中で自然に参照してください：
+- 成長・学び・挑戦
+- チームワーク・協力・信頼
+- ワークライフバランス・家族
+- 誠実さ・正直さ
+- 貢献・社会貢献
+- 自律・自由・主体性
+- 健康・心の余裕
+- 達成感・やりがい
+- 創造性・イノベーション
+- 多様性・尊重
+
+【連想提案（もしかして機能）】
+参加者の発言から価値観のキーワードを捉えたら、関連する価値観を連想して提案してください。
+例：
+- 「成長を大切にされているんですね。もしかして、『新しいことへの挑戦』も楽しんでいらっしゃいますか？」
+- 「家族との時間を大事にされているんですね。ひょっとすると、『心の余裕』を持つことも大切にされていますか？」
+- 「チームで働くことが好きなんですね。その中で『信頼関係を築くこと』にも価値を感じていらっしゃるかもしれませんね」
+
 【ファシリテーションの原則】
 1. **まず受け止める**: 相手の言葉をそのまま受け止め、評価や判断をせず、ありのままを受け入れる
 2. **共感を示す**: 相手の想いや感情に寄り添い、「そうなんですね」「大切にされているんですね」と共感する
@@ -331,6 +441,23 @@ Week 1のセッションを終えて、リラックスした雰囲気で対話�
 - **「I」の視点での「WE」**: 組織の中で自分はどう在りたいか、どんな価値を発揮したいか
 - **「WE」の視点での「I」**: 組織やチームが大切にしていることと、自分の価値観との関係
 - **前週の振り返り**: 1週目で明らかになった個人の価値観を踏まえて対話する
+
+【多角的視点からの問いかけ（重要）】
+対話の中で、以下のような視点からの問いかけを自然に組み込んでください：
+- **部下からの視点**: 「部下の方から見たあなたは、どんな存在だと思いますか？」「部下があなたに期待していることは何だと思いますか？」
+- **同僚からの視点**: 「同僚の方々は、あなたのどんなところを頼りにしていると思いますか？」
+- **上司からの視点**: 「上司の方は、あなたにどんな役割を期待していると感じますか？」
+- **社外の方からの視点**: 「お客様や取引先の方から見たあなたは？」
+- **清掃スタッフや受付の方からの視点**: 「普段あまり意識しない方々から見て、あなたはどんな印象の人だと思いますか？」
+
+これらの視点を通じて、自分では気づいていない価値観や強みを発見する機会を提供してください。
+
+【連想提案（もしかして機能）】
+参加者の発言から価値観のキーワードを捉えたら、関連する価値観を連想して提案してください。
+例：
+- 「チームワークを大切にされているんですね。もしかして、『一人ひとりの成長』も大事にされていますか？」
+- 「責任感が強いのですね。ひょっとすると、『信頼される存在でありたい』という思いもありますか？」
+- 「効率を重視されているようですね。その奥には『みんなの時間を大切にしたい』という気持ちもあるのかもしれませんね」
 
 【ファシリテーションの原則】
 1. **まず受け止める**: 相手の言葉をそのまま受け止め、評価や判断をせず、ありのままを受け入れる
@@ -537,6 +664,16 @@ app.post('/api/session/start', (req, res) => {
     });
   }
 
+  // 前回のアンケート結果があれば追加（次回セッションに活かす）
+  const previousSurvey = getPreviousSurveyResults(userId, week);
+  if (previousSurvey) {
+    const surveyFeedback = formatSurveyFeedback(previousSurvey);
+    if (surveyFeedback) {
+      systemMessage += surveyFeedback;
+      console.log(`前回(Week ${week - 1})のアンケート結果をセッションに反映しました`);
+    }
+  }
+
   const sessionData = {
     sessionId,
     userId,
@@ -670,7 +807,7 @@ app.post('/api/session/end', async (req, res) => {
 
     session.summary = summaryCompletion.choices[0].message.content;
 
-    // 記事を生成
+    // 記事を生成（多角的視点から）
     const articleMessages = [
       ...session.messages,
       {
@@ -696,6 +833,24 @@ ${session.theme}（${session.perspective}の視点）
 - 抽象的な言葉だけでなく、具体的な表現も含める
 - 参加者の言葉をできるだけそのまま活かす
 - 前週との繋がりがあれば言及する
+
+## 多角的視点からの分析
+【重要】以下の3つの視点から、参加者の価値観を分析してください：
+
+### 「I」（個人）の視点から
+- 個人として大切にしている価値観
+- 自分自身のウェルビーイングにとって重要なこと
+- 内面的な強みや特性
+
+### 「WE」（チーム・組織）の視点から
+- チームや組織の中での役割意識
+- 他者との関係性において大切にしていること
+- 周囲から見た自分の強み（推測を含む）
+
+### 「S」（会社・社会）の視点から
+- 会社や社会に対してどのような貢献をしたいか
+- より大きな視点での自分の存在意義
+- 社会的な価値観との関係
 
 ## 気づきと発見
 セッションを通じて得られた新たな視点や気づきをまとめてください。
@@ -751,15 +906,25 @@ ${session.theme}（${session.perspective}の視点）
       // イメージ生成に失敗しても記事は返す
     }
 
-    // イメージを記事に埋め込む（ローカルパスを使用）
+    // イメージを記事に埋め込む（ローカルパスを使用）+ 画像の説明を追加
     let finalArticle = article;
     const displayImageUrl = localImagePath || imageUrl;
     if (displayImageUrl) {
-      // タイトルの後にイメージを挿入
+      // 画像の説明を取得
+      const imageDescription = getImageDescription(session.week, session.perspective, session.theme);
+      
+      // タイトルの後にイメージと説明を挿入
       const lines = article.split('\n');
       const titleIndex = lines.findIndex(line => line.startsWith('# '));
       if (titleIndex !== -1) {
-        lines.splice(titleIndex + 1, 0, '', `![セッションのイメージ](${displayImageUrl})`, '');
+        lines.splice(titleIndex + 1, 0, 
+          '', 
+          `![セッションのイメージ](${displayImageUrl})`,
+          '',
+          `> **🖼️ この図について**`,
+          `> ${imageDescription}`,
+          ''
+        );
         finalArticle = lines.join('\n');
       }
     }
@@ -774,6 +939,7 @@ ${session.theme}（${session.perspective}の視点）
     // ファイルに保存
     saveSessionToFile(sessionId, session);
 
+    // レスポンスを返す
     res.json({
       summary: session.summary,
       article: finalArticle,
@@ -781,24 +947,145 @@ ${session.theme}（${session.perspective}の視点）
       theme: session.theme,
       imageUrl: displayImageUrl
     });
+
+    // 5週目の場合は、レスポンス送信後に裏で全レポートを生成（ユーザーには通知しない）
+    if (session.week === 5) {
+      setImmediate(async () => {
+        try {
+          console.log('5週目完了: 全レポートをバックグラウンドで生成中...');
+          
+          // ユーザーの全データを収集
+          const allSessions = getAllUserSessions(session.userId);
+          const allSurveys = getAllUserSurveys(session.userId);
+
+          // ユーザー用のディレクトリを作成
+          const displayName = (session.userName || session.userId).replace(/[\/\\:*?"<>|]/g, '_');
+          const userOutputDir = path.join(outputDir, displayName);
+          if (!fs.existsSync(userOutputDir)) {
+            fs.mkdirSync(userOutputDir, { recursive: true });
+          }
+
+          // 各週のレポートを生成・保存
+          for (let week = 1; week <= 5; week++) {
+            const weekSession = allSessions[week];
+            if (weekSession) {
+              const survey = allSurveys[week];
+              const weeklyReport = generateWeeklyReport(weekSession, survey);
+              const filepath = path.join(userOutputDir, `${week}週目.md`);
+              fs.writeFileSync(filepath, weeklyReport, 'utf-8');
+            }
+          }
+
+          // まとめレポートを生成・保存（ユーザー目線）
+          const userSummaryReport = await generateUserSummaryReport(
+            session.userId, 
+            session.userName || session.userId, 
+            allSessions, 
+            allSurveys
+          );
+          const userSummaryPath = path.join(userOutputDir, 'まとめ.md');
+          fs.writeFileSync(userSummaryPath, userSummaryReport, 'utf-8');
+
+          // 包括的レポートを生成・保存（人事目線）
+          const hrReport = await generateHRComprehensiveReport(
+            session.userId, 
+            session.userName || session.userId, 
+            allSessions, 
+            allSurveys
+          );
+          const hrReportPath = path.join(userOutputDir, '包括的レポート.md');
+          fs.writeFileSync(hrReportPath, hrReport, 'utf-8');
+
+          console.log(`✅ 全レポートを生成完了: ${userOutputDir}`);
+          console.log(`  - 1週目.md 〜 5週目.md`);
+          console.log(`  - まとめ.md（ユーザー目線）`);
+          console.log(`  - 包括的レポート.md（人事目線）`);
+        } catch (hrError) {
+          console.error('レポート生成エラー:', hrError);
+        }
+      });
+    }
   } catch (error) {
     console.error('OpenAI API Error:', error);
     res.status(500).json({ error: '要約の生成に失敗しました' });
   }
 });
 
-// イメージ生成用のプロンプトを生成
+// イメージ生成用のプロンプトを生成（テキストなしの抽象的なビジュアル）
 function generateImagePrompt(week, perspective, theme) {
-  const baseStyle = "Soft, warm, minimalist illustration with gentle colors and abstract shapes. Peaceful and inspiring atmosphere.";
+  // テキストを含めない、シンプルで温かみのあるスタイル
+  const baseStyle = "Soft, warm, minimalist illustration. NO TEXT, NO LABELS, NO WORDS, NO LETTERS in the image. Use only visual symbols, icons, and abstract shapes. Gentle pastel colors with professional corporate feel. Clean and peaceful atmosphere.";
 
   const weekPrompts = {
-    1: `${baseStyle} A serene scene representing personal values and well-being. Show a peaceful figure in contemplation, surrounded by soft light and abstract symbols of personal growth. Warm pastel colors, gentle gradients. Focus on introspection and self-discovery.`,
-    2: `${baseStyle} A harmonious scene showing connection between individual and team. Abstract representation of collaboration and roles within an organization. Soft interconnected shapes, warm colors suggesting belonging and contribution.`,
-    3: `${baseStyle} An expansive scene representing company and society. Abstract cityscape or organizational structure with a human element. Broader perspective, showing connection to larger purpose. Inspiring and hopeful atmosphere.`,
-    4: `${baseStyle} An integrative scene showing a journey coming together. Abstract path or bridge connecting different elements. Warm, hopeful colors suggesting forward movement and new beginnings. Symbols of small steps and growth.`
+    1: `${baseStyle}
+Create a warm illustration about personal values and self-discovery.
+Visual elements (NO TEXT):
+- A peaceful silhouette of a person in the center
+- Soft glowing circles radiating outward like ripples
+- Simple icons floating around: a heart, a plant/seedling, a sun, a home symbol
+- Warm gradient background from soft orange to gentle blue
+- Gentle light rays suggesting discovery and insight
+Style: Warm, introspective, peaceful. Like a meditation on personal growth.`,
+    
+    2: `${baseStyle}
+Create a cozy illustration about relaxed conversation and connection.
+Visual elements (NO TEXT):
+- Two simple figures sitting together in conversation
+- A steaming coffee cup between them
+- Soft speech bubble shapes with simple symbols inside (stars, hearts, lightbulbs)
+- Warm earth tones: cream, soft brown, gentle orange
+- Comfortable, cafe-like atmosphere
+Style: Friendly, relaxed, inviting. Like a warm conversation with a friend.`,
+    
+    3: `${baseStyle}
+Create an illustration showing multiple perspectives and teamwork.
+Visual elements (NO TEXT):
+- A central figure surrounded by 4-5 other figures in a circle
+- Connecting lines or gentle arrows between figures
+- Simple icons for teamwork: puzzle pieces, handshake symbol, connected dots
+- Professional colors: soft blue, teal, warm gray
+- Sense of connection and mutual support
+Style: Collaborative, supportive, showing how others see us.`,
+    
+    4: `${baseStyle}
+Create an illustration showing expanding perspective from individual to society.
+Visual elements (NO TEXT):
+- Concentric circles expanding outward (3-4 rings)
+- A small figure at the center
+- Simple building/city silhouettes in outer rings
+- Icons suggesting purpose: compass, star, rising arrow
+- Inspiring colors: soft green, sky blue, touches of gold
+Style: Expansive, hopeful, showing connection to larger purpose.`,
+    
+    5: `${baseStyle}
+Create an illustration about integration and taking first steps.
+Visual elements (NO TEXT):
+- Three overlapping circles (like a Venn diagram) in soft colors
+- A path or stepping stones leading forward
+- A figure taking a step toward a glowing horizon
+- Sunrise colors: soft pink, orange, golden yellow
+- Simple milestone markers along the path
+Style: Hopeful, forward-looking, encouraging small steps toward goals.`
   };
 
   return weekPrompts[week] || weekPrompts[1];
+}
+
+// 画像の説明を生成する関数（日本語）
+function getImageDescription(week, perspective, theme) {
+  const descriptions = {
+    1: `この図は「I（個人）の視点」から、あなた自身の価値観発見の旅を表しています。中心にいる人物はあなた自身を表し、周囲に広がる円は対話を通じて見つかった価値観（成長・家族・挑戦・健康など）を示しています。自己発見の道のりが、温かい色合いで描かれています。`,
+    
+    2: `この図は「雑談と自己発見」をテーマに、リラックスした対話の中から生まれる気づきを表現しています。二人の人物が和やかに会話している様子と、そこから浮かび上がるアイデアや興味が描かれています。コーヒーカップは、くつろいだ雰囲気を象徴しています。`,
+    
+    3: `この図は「WE（チーム・組織）の視点」を表しています。中心にいるあなたを、上司・同僚・部下など様々な立場の人々が取り囲み、それぞれの視点からあなたを見ています。異なる視点からの矢印は、多角的な視点を示しています。協力・信頼・役割・貢献といった要素が、組織の中でのあなたの存在を描いています。`,
+    
+    4: `この図は「S（会社・社会）の視点」を表しています。同心円状に広がる構造は、個人→チーム→会社→社会という視座の広がりを示しています。中心にいるあなたが、より大きな目的や使命とつながっている様子が、矢印で表現されています。ミッション・ビジョン・社会貢献といった要素が描かれています。`,
+    
+    5: `この図は「統合と行動計画」を表しています。I・WE・Sの3つの円が一つに重なり合い、これまでの気づきが統合されている様子を示しています。目標に向かって伸びる道と、最初の一歩を踏み出す人物が、希望に満ちた朝焼けの色で描かれています。小さな一歩の大切さを表現しています。`
+  };
+
+  return descriptions[week] || descriptions[1];
 }
 
 // 画像をダウンロードしてローカルに保存する関数
@@ -1042,6 +1329,892 @@ app.get('/api/session/report/:userId/:week', (req, res) => {
     imageUrl: session.imageUrl,
     completedAt: session.completedAt
   });
+});
+
+// ========================================
+// 人事向け詳細レポート出力機能
+// ========================================
+
+// シナリオメモに基づく週ごとの設定
+// ※シナリオは4週構成だが、1週目と2週目の間に雑談会を入れたため、システム上は5週構成
+// システム1週目 = シナリオ1週目（I）
+// システム2週目 = 雑談会（追加）
+// システム3週目 = シナリオ2週目（WE - 部署）
+// システム4週目 = シナリオ3週目（S - PERSOLグループ）
+// システム5週目 = シナリオ4週目（統合）
+const weeklyScenario = {
+  1: {
+    timing: '1週目',
+    scenarioWeek: '1週目',
+    scope: 'I',
+    scopeLabel: '個人',
+    purpose: '個人の価値観の探求、自己理解を深める',
+    goal: '「価値観」を起点にした自己理解が深まった状態',
+    keyPoints: [
+      'その人のありのままの価値観を受容する設計',
+      'その人らしい「はたらくWell-being」を引き出す',
+      '納得感、腹落ち感を大切に',
+      'どんなIでも受容、本音を話してもいいんだと思ってもらえるようなAI'
+    ],
+    dialogueFlow: [
+      'AIからのイントロダクション（趣旨やルール）',
+      'チェックイン：現在「はたらくWell-being」のワークを実施する今の気持ち',
+      'はたらくうえで大事にしている「価値観」TOP3',
+      'それぞれについて選んだ背景、理由（深堀り）',
+      '自分の中にある背景や価値観に対する自己理解',
+      '違う視点、違う表現で言い換え気づきを与える',
+      'リフレクション：今日の対話からの気づき、感じたこと',
+      '次回のインフォメーション'
+    ]
+  },
+  2: {
+    timing: '2週目',
+    scenarioWeek: '（追加セッション）',
+    scope: 'Chat',
+    scopeLabel: '雑談会',
+    purpose: 'Week 1のフィードバック収集とリラックスした対話',
+    goal: 'リラックスして話せ、次回以降のセッションがより良いものになること',
+    keyPoints: [
+      '前回セッションの感想や改善点を聞く',
+      '趣味、興味、悩みなど、その人をより深く知る',
+      '占いモードで自己理解を深める（希望時）',
+      '気軽に話せる雰囲気を作る'
+    ],
+    dialogueFlow: [
+      '雑談モードまたは占いモードの選択',
+      'Week 1のフィードバック収集',
+      '趣味・興味・悩みなどの対話',
+      'リラックスした雰囲気での交流'
+    ]
+  },
+  3: {
+    timing: '3週目',
+    scenarioWeek: '2週目',
+    scope: 'WE',
+    scopeLabel: '組織（部署）',
+    purpose: '組織（部署）と「私」の関わりの探求、解像度向上',
+    goal: '組織（部署）の仕事の意義、価値と、自分がはたらくうえで成し遂げたいことの重なりについて、解像度が高まった状態',
+    keyPoints: [
+      '本人が本音を話せる設計（MBOではない）',
+      '重なりがあまりないときも、なぜ重なり合わないのか探求',
+      'AIの助言や問いかけにより新たな視点で物事を見る',
+      'よい問いであれば、頭に残り、持ち帰って考える'
+    ],
+    dialogueFlow: [
+      '前回の振り返り（会話内容のサマリ＆前回のリフレクションを表示）',
+      'AIから今日のイントロダクション',
+      'あなたの部署は何をミッションに、誰にどんな価値を提供している組織か',
+      '部署が大事にしている価値観TOP3',
+      'それぞれについて選んだ背景、理由（深堀り）',
+      '自分の価値観と重なるところはあるか、それはなぜか',
+      'AIからの提案（うまく対話ができないとき）',
+      'リフレクション：今日の対話からの気づき、感じたこと',
+      '次回のインフォメーション'
+    ]
+  },
+  4: {
+    timing: '4週目',
+    scenarioWeek: '3週目',
+    scope: 'S',
+    scopeLabel: '組織（PERSOLグループ）',
+    purpose: '組織（PERSOLグループ）と「私」の関わりの探求、解像度向上',
+    goal: 'PERSOLグループの仕事の意義、価値と、自分がはたらくうえで成し遂げたいことの重なりについて、解像度が高まった状態',
+    keyPoints: [
+      'その人なりのPERSOLの価値の言語化、持論を引き出す',
+      'AIによる助言、視点の共有により言語化を支援',
+      'PERSOL人として何らかの言語化ができるように',
+      'PERSOLのオフィシャル情報（統合報告書、人的資本レポート、中計等）を参照'
+    ],
+    dialogueFlow: [
+      '前回の振り返り（会話内容のサマリ＆前回のリフレクションを表示）',
+      'AIから今日のイントロダクション',
+      'PERSOL（グループ全体）は何をミッションに、誰にどんな価値を提供している組織か',
+      'PERSOLが大事にしている価値観TOP3',
+      'それぞれについて選んだ背景、理由（深堀り）',
+      '自分の価値観と重なるところはあるか、それはなぜか',
+      'AIからの提案（うまく対話ができないとき）',
+      'リフレクション：今日の対話からの気づき、感じたこと',
+      '次回のインフォメーション'
+    ]
+  },
+  5: {
+    timing: '5週目',
+    scenarioWeek: '4週目',
+    scope: '統合',
+    scopeLabel: 'I/WE/S統合',
+    purpose: 'IとWEとSの統合により、自身およびPERSOLではたらくことの意義や価値について理解を深める',
+    goal: 'はたらく自分自身のこと、PERSOLではたらくことの自分なりの意義や価値について、内省の深まりを実感できた状態。言語化したものの解像度が高まっている状態',
+    keyPoints: [
+      '日常への接続まで対話する',
+      'Day1～3のまとめ、サマリーの提示',
+      '自分がはたらくうえで大事にしたい価値観の再確認',
+      '今日の答えはβ版、考え続けてほしい'
+    ],
+    dialogueFlow: [
+      'AIによるDay1～3のまとめ、サマリーの提示',
+      '振り返ってみてどう思うか？気づいたこと、感じたこと',
+      '改めて、自分がはたらくうえで大事にしたい価値観TOP3（Day1から変更OK）',
+      'それぞれについて選んだ背景、理由（変わった理由、変わらなかった理由）',
+      '「PERSOLで実現したい、あなたのはたらくWell-Being」を言語化（他者に説明するつもりで）',
+      'これからの日常でどのように意識、行動していきたいか',
+      'AIからのクロージングメッセージ（感謝、β版として考え続けること、レポートについて）'
+    ],
+    output: '統合レポート（AIなりにまとめた「XXさんのはたらくWell-being」や「あなたと現在の組織のかかわり、かさなり」「あなたとPERSOLのかかわり、かさなり」などのサマリやアドバイス）'
+  }
+};
+
+// ユーザーの全セッションデータを取得
+function getAllUserSessions(userId) {
+  const userSessions = {};
+  for (let week = 1; week <= 5; week++) {
+    const session = findUserWeekSessions(userId, week);
+    if (session && session.isCompleted) {
+      userSessions[week] = session;
+    }
+  }
+  return userSessions;
+}
+
+// ユーザーの全アンケート結果を取得
+function getAllUserSurveys(userId) {
+  const surveysDir = path.join(__dirname, 'data', 'surveys');
+  if (!fs.existsSync(surveysDir)) return {};
+
+  const userSurveys = {};
+  try {
+    const files = fs.readdirSync(surveysDir);
+    for (let week = 1; week <= 5; week++) {
+      const pattern = `survey_${userId}_week${week}_`;
+      const matchingFiles = files.filter(f => f.startsWith(pattern) && f.endsWith('.json'));
+      if (matchingFiles.length > 0) {
+        const sortedFiles = matchingFiles.sort().reverse();
+        const filepath = path.join(surveysDir, sortedFiles[0]);
+        const data = fs.readFileSync(filepath, 'utf-8');
+        userSurveys[week] = JSON.parse(data);
+      }
+    }
+  } catch (error) {
+    console.error('Survey collection error:', error);
+  }
+  return userSurveys;
+}
+
+// 週ごとのレポートを生成（シナリオメモに基づく）
+function generateWeeklyReport(session, survey) {
+  const scenario = weeklyScenario[session.week] || {};
+  
+  let report = `# ${session.week}週目 セッションレポート\n\n`;
+  
+  // シナリオ情報
+  report += `## 📋 セッション概要\n\n`;
+  report += `| 項目 | 内容 |\n|---|---|\n`;
+  report += `| **システム週** | ${session.week}週目 |\n`;
+  if (scenario.scenarioWeek) {
+    report += `| **シナリオ週** | ${scenario.scenarioWeek} |\n`;
+  }
+  report += `| **テーマ** | ${session.theme} |\n`;
+  report += `| **視点（範囲）** | ${scenario.scope || session.perspective}（${scenario.scopeLabel || ''}） |\n`;
+  report += `| **目的** | ${scenario.purpose || '-'} |\n`;
+  report += `| **ゴール** | ${scenario.goal || '-'} |\n`;
+  report += `| **実施日時** | ${new Date(session.completedAt).toLocaleString('ja-JP')} |\n`;
+  report += `| **会話モード** | ${session.conversationMode || 'standard'} |\n`;
+  report += `| **セッション長さ** | ${session.sessionLength || 'medium'} |\n\n`;
+
+  // 週のポイント
+  if (scenario.keyPoints && scenario.keyPoints.length > 0) {
+    report += `### 🎯 この週で大事にしていること\n`;
+    scenario.keyPoints.forEach(point => {
+      report += `- ${point}\n`;
+    });
+    report += '\n';
+  }
+
+  // 対話の流れ
+  if (scenario.dialogueFlow && scenario.dialogueFlow.length > 0) {
+    report += `### 📝 対話の流れ（シナリオ）\n`;
+    scenario.dialogueFlow.forEach((step, i) => {
+      report += `${i + 1}. ${step}\n`;
+    });
+    report += '\n';
+  }
+
+  report += `---\n\n`;
+
+  // セッションの記事内容
+  report += `## 📖 セッション記録\n\n`;
+  if (session.article) {
+    report += session.article;
+    report += '\n\n';
+  }
+
+  report += `---\n\n`;
+
+  // アンケート結果
+  report += `## 📊 セッション後アンケート結果\n\n`;
+  if (survey && survey.responses) {
+    const r = survey.responses;
+    const scoreLabels = { 1: '⭐', 2: '⭐⭐', 3: '⭐⭐⭐', 4: '⭐⭐⭐⭐', 5: '⭐⭐⭐⭐⭐' };
+    
+    if (r.satisfaction) {
+      report += `| 項目 | 評価 |\n|---|---|\n`;
+      report += `| 満足度 | ${scoreLabels[r.satisfaction] || r.satisfaction}/5 |\n`;
+      if (r.awareness) report += `| 気づき | ${scoreLabels[r.awareness] || r.awareness}/5 |\n`;
+      if (r.ease) report += `| 話しやすさ | ${scoreLabels[r.ease] || r.ease}/5 |\n`;
+      if (r.motivation) report += `| 次回への意欲 | ${scoreLabels[r.motivation] || r.motivation}/5 |\n`;
+      report += '\n';
+    }
+    if (r.feedback) {
+      report += `**参加者コメント**:\n> ${r.feedback}\n\n`;
+    }
+  } else {
+    report += `_アンケート未回答_\n\n`;
+  }
+
+  // ゴール達成度の評価（あれば）
+  if (scenario.goal && survey?.responses?.awareness) {
+    report += `### 🎯 ゴール達成への評価\n`;
+    const achievementLevel = survey.responses.awareness >= 4 ? '達成に向けて良好' : 
+                             survey.responses.awareness >= 3 ? '概ね進捗あり' : '更なる深堀りが望ましい';
+    report += `**${scenario.goal}**\n`;
+    report += `→ 評価: ${achievementLevel}\n\n`;
+  }
+
+  return report;
+}
+
+// まとめレポートを生成（ユーザー目線 - 温かく、自分への振り返りに使える形式）
+async function generateUserSummaryReport(userId, userName, allSessions, allSurveys) {
+  let report = `# 🌟 ${userName}さんの「はたらくWell-being」の旅路\n\n`;
+  report += `> このレポートは、あなた自身の価値観や想いを振り返るためのものです。\n`;
+  report += `> いつでも読み返して、自分を見つめ直すきっかけにしてください。\n\n`;
+  report += `**作成日**: ${new Date().toLocaleString('ja-JP')}\n\n`;
+
+  report += `---\n\n`;
+
+  // プログラム全体の流れ
+  report += `## 📅 あなたの歩み\n\n`;
+  
+  for (let week = 1; week <= 5; week++) {
+    const session = allSessions[week];
+    const scenario = weeklyScenario[week];
+    const survey = allSurveys[week];
+    
+    if (session) {
+      report += `### 🔹 ${week}週目: ${scenario?.scopeLabel || session.theme}\n`;
+      report += `**テーマ**: ${session.theme}\n`;
+      report += `**目的**: ${scenario?.purpose || '-'}\n\n`;
+      if (session.summary) {
+        report += `${session.summary}\n\n`;
+      }
+    } else {
+      report += `### ◻️ ${week}週目: ${scenario?.scopeLabel || '未実施'}\n`;
+      report += `_このセッションはまだ実施されていません_\n\n`;
+    }
+  }
+
+  report += `---\n\n`;
+
+  // I/WE/S分析（ユーザー向けの温かいトーン）
+  if (Object.keys(allSessions).length >= 2) {
+    report += `## 💡 あなたの価値観マップ\n\n`;
+    report += `プログラムを通じて見えてきた、あなたの大切なものを整理しました。\n\n`;
+    
+    const summaries = Object.values(allSessions)
+      .filter(s => s.summary)
+      .map(s => `${s.week}週目（${weeklyScenario[s.week]?.scopeLabel || ''}）: ${s.summary}`)
+      .join('\n');
+
+    try {
+      const analysisCompletion = await openai.chat.completions.create({
+        model: 'gpt-4',
+        messages: [
+          {
+            role: 'system',
+            content: `あなたは温かく共感的なコーチです。参加者本人が読んで嬉しくなり、自己理解が深まるような振り返りレポートを作成します。
+「あなたは〜」という二人称で、親しみやすく励ましのトーンで書いてください。`
+          },
+          {
+            role: 'user',
+            content: `以下のセッションサマリーから、参加者本人向けの振り返りを作成してください。
+
+${summaries}
+
+以下の形式で出力してください：
+
+### 🧡 あなたが大切にしていること（I：個人の価値観）
+あなた自身が仕事や人生で大切にしている価値観を、温かい言葉でまとめてください。
+
+### 🤝 あなたとチーム・組織（WE：関係性）
+チームや組織の中であなたがどんな存在でありたいか、どんな関わり方を大切にしているかをまとめてください。
+
+### 🌍 あなたと会社・社会（S：より大きな視点）
+会社や社会に対してあなたが感じていること、貢献したいと思っていることをまとめてください。
+
+### ✨ あなたの「はたらくWell-being」
+これらを統合して、あなたにとっての「はたらくWell-being」とは何かを、本人に語りかけるように表現してください。
+
+温かく、ポジティブで、本人が読んで力をもらえるような文章でお願いします。`
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 1000
+      });
+
+      report += analysisCompletion.choices[0].message.content + '\n\n';
+    } catch (error) {
+      console.error('User summary analysis error:', error);
+      report += '_分析の生成に失敗しました_\n\n';
+    }
+  }
+
+  // これからの一歩
+  report += `---\n\n`;
+  report += `## 🚀 これからの一歩\n\n`;
+  report += `このプログラムで見つけた価値観やWell-beingを、日常の中で意識していくことが大切です。\n\n`;
+  report += `- **今日から意識できること**: 一つでいいので、自分の価値観を意識する場面を増やしてみましょう\n`;
+  report += `- **困ったときは**: このレポートを読み返して、自分が何を大切にしているかを思い出しましょう\n`;
+  report += `- **続けていくこと**: 価値観は変化することもあります。定期的に自分を振り返る時間を持ちましょう\n\n`;
+
+  report += `---\n\n`;
+  report += `> 🌈 あなたの「はたらくWell-being」の旅はこれからも続きます。\n`;
+  report += `> 自分らしく、前向きに歩んでいってください！\n\n`;
+  report += `_このレポートはAIファシリテーションシステムにより作成されました_\n`;
+
+  return report;
+}
+
+// 人事向け包括的レポートを生成（人事目線 - 客観的・分析的視点）
+async function generateHRComprehensiveReport(userId, userName, allSessions, allSurveys) {
+  let report = `# 包括的レポート（人事向け）\n\n`;
+  report += `## 対象者情報\n\n`;
+  report += `| 項目 | 内容 |\n|---|---|\n`;
+  report += `| **氏名** | ${userName} |\n`;
+  report += `| **ユーザーID** | ${userId} |\n`;
+  report += `| **レポート生成日** | ${new Date().toLocaleString('ja-JP')} |\n`;
+  report += `| **セッション完了数** | ${Object.keys(allSessions).length} / 5 週 |\n\n`;
+
+  report += `---\n\n`;
+
+  // プログラム概要
+  report += `## 📚 プログラム概要\n\n`;
+  report += `本プログラムは、従業員の「はたらくWell-being」を探求し、自己理解と組織との関わりを深めることを目的としています。\n\n`;
+  report += `> ※シナリオは4週構成ですが、1週目と2週目の間に雑談会を追加したため、システム上は5週構成となっています。\n\n`;
+  report += `| システム週 | シナリオ週 | 範囲 | 目的 |\n|---|---|---|---|\n`;
+  for (let week = 1; week <= 5; week++) {
+    const scenario = weeklyScenario[week];
+    if (scenario) {
+      report += `| ${week}週目 | ${scenario.scenarioWeek} | ${scenario.scope}（${scenario.scopeLabel}） | ${scenario.purpose} |\n`;
+    }
+  }
+  report += '\n';
+
+  report += `---\n\n`;
+
+  // エグゼクティブサマリー
+  report += `## 📋 エグゼクティブサマリー\n\n`;
+  
+  const completedWeeks = Object.keys(allSessions).length;
+  const avgSatisfaction = Object.values(allSurveys)
+    .filter(s => s?.responses?.satisfaction)
+    .map(s => s.responses.satisfaction)
+    .reduce((a, b, _, arr) => a + b / arr.length, 0) || 0;
+  
+  const avgAwareness = Object.values(allSurveys)
+    .filter(s => s?.responses?.awareness)
+    .map(s => s.responses.awareness)
+    .reduce((a, b, _, arr) => a + b / arr.length, 0) || 0;
+
+  report += `| 指標 | 値 | 評価 |\n|---|---|---|\n`;
+  report += `| プログラム完了率 | ${(completedWeeks / 5 * 100).toFixed(0)}% | ${completedWeeks === 5 ? '✅ 完了' : '⚠️ 進行中'} |\n`;
+  report += `| 平均満足度 | ${avgSatisfaction.toFixed(1)} / 5 | ${avgSatisfaction >= 4 ? '良好' : avgSatisfaction >= 3 ? '普通' : '要注意'} |\n`;
+  report += `| 平均気づき度 | ${avgAwareness.toFixed(1)} / 5 | ${avgAwareness >= 4 ? '良好' : avgAwareness >= 3 ? '普通' : '要フォロー'} |\n\n`;
+
+  // セッション参加履歴（詳細）
+  report += `## 📅 セッション参加履歴\n\n`;
+  report += `| 週 | シナリオ | 範囲 | テーマ | 実施日 | ゴール達成 | 満足度 | 気づき | 話しやすさ | 意欲 |\n`;
+  report += `|---|---|---|---|---|---|---|---|---|---|\n`;
+
+  for (let week = 1; week <= 5; week++) {
+    const session = allSessions[week];
+    const survey = allSurveys[week];
+    const scenario = weeklyScenario[week];
+    
+    if (session) {
+      const date = new Date(session.completedAt).toLocaleDateString('ja-JP');
+      const r = survey?.responses || {};
+      const goalAchievement = r.awareness >= 4 ? '◎' : r.awareness >= 3 ? '○' : r.awareness >= 1 ? '△' : '-';
+      report += `| ${week} | ${scenario?.scenarioWeek || '-'} | ${scenario?.scope || '-'} | ${session.theme} | ${date} | ${goalAchievement} | ${r.satisfaction || '-'} | ${r.awareness || '-'} | ${r.ease || '-'} | ${r.motivation || '-'} |\n`;
+    } else {
+      report += `| ${week} | ${scenario?.scenarioWeek || '-'} | ${scenario?.scope || '-'} | ${scenario?.scopeLabel || '未実施'} | - | - | - | - | - | - |\n`;
+    }
+  }
+  report += '\n';
+
+  // 各週のゴール達成状況
+  report += `## 🎯 各週のゴール達成状況\n\n`;
+  for (let week = 1; week <= 5; week++) {
+    const session = allSessions[week];
+    const scenario = weeklyScenario[week];
+    const survey = allSurveys[week];
+    
+    if (session && scenario) {
+      report += `### ${week}週目（シナリオ${scenario.scenarioWeek}）: ${scenario.scopeLabel}（${scenario.scope}）\n`;
+      report += `**設定ゴール**: ${scenario.goal}\n`;
+      
+      const achievementLevel = survey?.responses?.awareness >= 4 ? '達成' : 
+                               survey?.responses?.awareness >= 3 ? '概ね達成' : 
+                               survey?.responses?.awareness >= 1 ? '一部達成' : '未評価';
+      report += `**達成度**: ${achievementLevel}\n`;
+      
+      if (session.summary) {
+        report += `**サマリー**: ${session.summary}\n`;
+      }
+      report += '\n';
+    }
+  }
+
+  // アンケート推移分析
+  report += `## 📈 アンケート推移分析\n\n`;
+  
+  const surveyTrend = [];
+  for (let week = 1; week <= 5; week++) {
+    const survey = allSurveys[week];
+    if (survey?.responses) {
+      surveyTrend.push({ week, ...survey.responses });
+    }
+  }
+
+  if (surveyTrend.length >= 2) {
+    const first = surveyTrend[0];
+    const last = surveyTrend[surveyTrend.length - 1];
+    
+    const satisfactionTrend = (last.satisfaction || 0) - (first.satisfaction || 0);
+    const awarenessTrend = (last.awareness || 0) - (first.awareness || 0);
+    const easeTrend = (last.ease || 0) - (first.ease || 0);
+    const motivationTrend = (last.motivation || 0) - (first.motivation || 0);
+
+    report += `### 変化傾向\n`;
+    report += `| 項目 | 初回(${first.week}週目) | 最終(${last.week}週目) | 変化 | 傾向 |\n|---|---|---|---|---|\n`;
+    report += `| 満足度 | ${first.satisfaction || '-'} | ${last.satisfaction || '-'} | ${satisfactionTrend > 0 ? '+' : ''}${satisfactionTrend} | ${satisfactionTrend > 0 ? '📈 向上' : satisfactionTrend < 0 ? '📉 低下' : '➡️ 維持'} |\n`;
+    report += `| 気づき | ${first.awareness || '-'} | ${last.awareness || '-'} | ${awarenessTrend > 0 ? '+' : ''}${awarenessTrend} | ${awarenessTrend > 0 ? '📈 向上' : awarenessTrend < 0 ? '📉 低下' : '➡️ 維持'} |\n`;
+    report += `| 話しやすさ | ${first.ease || '-'} | ${last.ease || '-'} | ${easeTrend > 0 ? '+' : ''}${easeTrend} | ${easeTrend > 0 ? '📈 向上' : easeTrend < 0 ? '📉 低下' : '➡️ 維持'} |\n`;
+    report += `| 次回意欲 | ${first.motivation || '-'} | ${last.motivation || '-'} | ${motivationTrend > 0 ? '+' : ''}${motivationTrend} | ${motivationTrend > 0 ? '📈 向上' : motivationTrend < 0 ? '📉 低下' : '➡️ 維持'} |\n\n`;
+
+    // 傾向の解釈
+    report += `### 傾向の解釈\n`;
+    if (satisfactionTrend > 0 && awarenessTrend > 0) {
+      report += `- プログラムを通じて満足度と気づきが向上しており、効果的な自己探求が行われたと考えられます\n`;
+    } else if (satisfactionTrend < 0 || awarenessTrend < 0) {
+      report += `- 一部の指標に低下傾向が見られます。フォローアップの機会を検討してください\n`;
+    }
+    if (easeTrend > 0) {
+      report += `- 話しやすさが向上しており、AIとの対話に慣れていったことが伺えます\n`;
+    }
+    report += '\n';
+  }
+
+  // AI分析（人事向け）
+  report += `## 🔍 人事視点での分析\n\n`;
+
+  const summaries = Object.values(allSessions)
+    .filter(s => s.summary)
+    .map(s => {
+      const scenario = weeklyScenario[s.week];
+      return `${s.week}週目（${scenario?.scope || ''}: ${scenario?.scopeLabel || ''}）: ${s.summary}`;
+    })
+    .join('\n');
+
+  if (summaries) {
+    try {
+      const hrAnalysis = await openai.chat.completions.create({
+        model: 'gpt-4',
+        messages: [
+          {
+            role: 'system',
+            content: `あなたは人事担当者向けの分析レポートを作成する専門家です。
+「はたらくWell-being」プログラムの結果を分析し、以下の観点から客観的かつ建設的な所見を提供します：
+- I（個人）：個人としての価値観、自己理解の深まり
+- WE（部署・チーム）：組織との関わり、役割意識
+- S（会社・社会）：より大きな視点での貢献意識、ミッションへの共感
+評価的・判断的になりすぎず、ポジティブな可能性を見出す姿勢で記述してください。`
+          },
+          {
+            role: 'user',
+            content: `以下の従業員のセッションサマリーを分析し、人事担当者向けのレポートを作成してください。
+
+${summaries}
+
+以下の形式で出力してください：
+
+### I（個人）の視点からの所見
+- この従業員が持つ個人的な価値観と自己理解の状況
+
+### WE（部署・チーム）の視点からの所見
+- チームや部署との関わりにおける特徴と課題意識
+
+### S（会社・社会）の視点からの所見
+- 会社のミッション・ビジョンへの共感度、社会貢献への志向
+
+### 価値観・強みの特徴
+- この従業員が持つ主な価値観と強み（2-3項目）
+
+### 組織への貢献ポテンシャル
+- チームや組織に対してどのような貢献が期待できるか
+
+### エンゲージメントの状態
+- 仕事や組織へのエンゲージメント状態の所見
+
+### キャリア志向
+- 見られるキャリア志向や成長意欲
+
+### 推奨されるサポート
+- 人事・上司として検討すべきサポートや機会提供
+
+各項目2-3文程度で、客観的かつ建設的に記述してください。`
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 1500
+      });
+
+      report += hrAnalysis.choices[0].message.content + '\n\n';
+    } catch (error) {
+      console.error('HR Analysis generation error:', error);
+      report += '_分析の生成に失敗しました_\n\n';
+    }
+  }
+
+  // 参加者フィードバック（原文）
+  report += `## 💬 参加者フィードバック（原文）\n\n`;
+  let hasComments = false;
+  for (let week = 1; week <= 5; week++) {
+    const survey = allSurveys[week];
+    const scenario = weeklyScenario[week];
+    if (survey?.responses?.feedback) {
+      hasComments = true;
+      report += `**${week}週目（${scenario?.scopeLabel || ''}）**: \n> ${survey.responses.feedback}\n\n`;
+    }
+  }
+  if (!hasComments) {
+    report += `_フィードバックコメントなし_\n\n`;
+  }
+
+  // アクションアイテム（推奨）
+  report += `## 📌 推奨アクションアイテム\n\n`;
+  report += `本レポートを踏まえ、以下のアクションを検討してください：\n\n`;
+  
+  if (completedWeeks === 5) {
+    report += `1. **1on1ミーティング**: 本人との対話を通じて、プログラムでの気づきを日常業務に活かす方法を一緒に考える\n`;
+    report += `2. **キャリア開発**: 本人の価値観に合った成長機会や役割を検討する\n`;
+    report += `3. **チームへの共有**: 本人の同意を得た上で、チーム内での相互理解促進に活用する\n`;
+  } else {
+    report += `1. **プログラム完了の促進**: 残りのセッションを完了できるよう、時間確保をサポートする\n`;
+    report += `2. **中間フォロー**: 現時点での気づきや課題について、カジュアルな対話の機会を設ける\n`;
+  }
+  report += '\n';
+
+  // 注意事項
+  report += `---\n\n`;
+  report += `## ⚠️ 本レポートの取り扱いについて\n\n`;
+  report += `- 本レポートは従業員のウェルビーイング向上支援を目的として作成されています\n`;
+  report += `- 内容は評価目的ではなく、サポート・育成の参考情報としてご活用ください\n`;
+  report += `- 個人情報として適切に管理し、目的外利用はお控えください\n`;
+  report += `- AI分析は参考情報であり、最終的な判断は人事担当者が行ってください\n`;
+  report += `- 本人へのフィードバックは、別途作成される「まとめ」レポート（ユーザー向け）をご参照ください\n\n`;
+
+  report += `---\n\n`;
+  report += `_本レポートはAIファシリテーションシステムにより自動生成されました_\n`;
+  report += `_生成日時: ${new Date().toLocaleString('ja-JP')}_\n`;
+
+  return report;
+}
+
+// レポート出力エンドポイント
+app.post('/api/report/generate', async (req, res) => {
+  const { userId, userName } = req.body;
+
+  if (!userId) {
+    return res.status(400).json({ error: 'ユーザーIDが必要です' });
+  }
+
+  try {
+    // ユーザーのデータを収集
+    const allSessions = getAllUserSessions(userId);
+    const allSurveys = getAllUserSurveys(userId);
+
+    if (Object.keys(allSessions).length === 0) {
+      return res.status(404).json({ error: '完了したセッションがありません' });
+    }
+
+    // ユーザー用のディレクトリを作成
+    const displayName = userName || userId;
+    const userOutputDir = path.join(outputDir, displayName.replace(/[\/\\:*?"<>|]/g, '_'));
+    if (!fs.existsSync(userOutputDir)) {
+      fs.mkdirSync(userOutputDir, { recursive: true });
+    }
+
+    const generatedFiles = [];
+
+    // 各週のレポートを生成・保存
+    for (let week = 1; week <= 5; week++) {
+      const session = allSessions[week];
+      if (session) {
+        const survey = allSurveys[week];
+        const weeklyReport = generateWeeklyReport(session, survey);
+        const filename = `${week}週目.md`;
+        const filepath = path.join(userOutputDir, filename);
+        fs.writeFileSync(filepath, weeklyReport, 'utf-8');
+        generatedFiles.push(filename);
+      }
+    }
+
+    // まとめレポートを生成・保存（ユーザー目線）
+    const userSummaryReport = await generateUserSummaryReport(userId, displayName, allSessions, allSurveys);
+    const userSummaryFilename = 'まとめ.md';
+    const userSummaryFilepath = path.join(userOutputDir, userSummaryFilename);
+    fs.writeFileSync(userSummaryFilepath, userSummaryReport, 'utf-8');
+    generatedFiles.push(userSummaryFilename);
+
+    // 包括的レポートを生成・保存（人事目線）
+    const hrReport = await generateHRComprehensiveReport(userId, displayName, allSessions, allSurveys);
+    const hrReportFilename = '包括的レポート.md';
+    const hrReportFilepath = path.join(userOutputDir, hrReportFilename);
+    fs.writeFileSync(hrReportFilepath, hrReport, 'utf-8');
+    generatedFiles.push(hrReportFilename);
+
+    res.json({
+      success: true,
+      message: 'レポートを生成しました',
+      outputPath: userOutputDir,
+      files: generatedFiles
+    });
+
+  } catch (error) {
+    console.error('Report generation error:', error);
+    res.status(500).json({ error: 'レポート生成に失敗しました', details: error.message });
+  }
+});
+
+// 全ユーザーのレポート一括生成
+app.post('/api/report/generate-all', async (req, res) => {
+  try {
+    // セッションディレクトリから全ユーザーを取得
+    const files = fs.readdirSync(sessionsDir);
+    const userIds = new Set();
+    
+    files.forEach(f => {
+      if (f.endsWith('.json')) {
+        const match = f.match(/^(.+?)_week/);
+        if (match) {
+          userIds.add(match[1]);
+        }
+      }
+    });
+
+    const results = [];
+
+    for (const userId of userIds) {
+      try {
+        const allSessions = getAllUserSessions(userId);
+        const allSurveys = getAllUserSurveys(userId);
+
+        if (Object.keys(allSessions).length === 0) continue;
+
+        // ユーザー名を取得（最初のセッションから）
+        const firstSession = Object.values(allSessions)[0];
+        const userName = firstSession?.userName || userId;
+
+        // ユーザー用のディレクトリを作成
+        const displayName = userName.replace(/[\/\\:*?"<>|]/g, '_');
+        const userOutputDir = path.join(outputDir, displayName);
+        if (!fs.existsSync(userOutputDir)) {
+          fs.mkdirSync(userOutputDir, { recursive: true });
+        }
+
+        // 各週のレポートを生成・保存
+        for (let week = 1; week <= 5; week++) {
+          const session = allSessions[week];
+          if (session) {
+            const survey = allSurveys[week];
+            const weeklyReport = generateWeeklyReport(session, survey);
+            const filepath = path.join(userOutputDir, `${week}週目.md`);
+            fs.writeFileSync(filepath, weeklyReport, 'utf-8');
+          }
+        }
+
+        // まとめレポートを生成・保存（ユーザー目線）
+        const userSummaryReport = await generateUserSummaryReport(userId, userName, allSessions, allSurveys);
+        const userSummaryFilepath = path.join(userOutputDir, 'まとめ.md');
+        fs.writeFileSync(userSummaryFilepath, userSummaryReport, 'utf-8');
+
+        // 包括的レポートを生成・保存（人事目線）
+        const hrReport = await generateHRComprehensiveReport(userId, userName, allSessions, allSurveys);
+        const hrReportFilepath = path.join(userOutputDir, '包括的レポート.md');
+        fs.writeFileSync(hrReportFilepath, hrReport, 'utf-8');
+
+        results.push({ userId, userName, success: true });
+      } catch (userError) {
+        results.push({ userId, success: false, error: userError.message });
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `${results.filter(r => r.success).length}名のレポートを生成しました`,
+      results
+    });
+
+  } catch (error) {
+    console.error('Batch report generation error:', error);
+    res.status(500).json({ error: '一括レポート生成に失敗しました', details: error.message });
+  }
+});
+
+// Git同期エンドポイント
+app.post('/api/git/sync', async (req, res) => {
+  const { exec } = require('child_process');
+  const util = require('util');
+  const execPromise = util.promisify(exec);
+
+  try {
+    // Git add
+    await execPromise('git add -A', { cwd: __dirname });
+    
+    // Git commit (変更がなくてもエラーにならないように)
+    const commitMessage = `データ同期: ${new Date().toLocaleString('ja-JP')}`;
+    try {
+      await execPromise(`git commit -m "${commitMessage}"`, { cwd: __dirname });
+    } catch (commitError) {
+      // 変更がない場合は無視
+      if (!commitError.message.includes('nothing to commit')) {
+        throw commitError;
+      }
+    }
+
+    // Git pull (コンフリクトを避けるため、先にpull)
+    try {
+      await execPromise('git pull --rebase', { cwd: __dirname });
+    } catch (pullError) {
+      console.log('Pull skipped or failed:', pullError.message);
+    }
+
+    // Git push
+    await execPromise('git push', { cwd: __dirname });
+
+    res.json({ success: true, message: 'Git同期が完了しました' });
+  } catch (error) {
+    console.error('Git sync error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Git同期に失敗しました', 
+      details: error.message 
+    });
+  }
+});
+
+// アンケート保存用ディレクトリ
+const surveysDir = path.join(__dirname, 'data', 'surveys');
+if (!fs.existsSync(surveysDir)) {
+  fs.mkdirSync(surveysDir, { recursive: true });
+}
+
+// アンケート設問定義
+const surveyQuestions = {
+  postSession: [
+    {
+      id: 'satisfaction',
+      type: 'scale',
+      question: 'このセッションの満足度を教えてください',
+      min: 1,
+      max: 5,
+      minLabel: '不満',
+      maxLabel: '満足'
+    },
+    {
+      id: 'awareness',
+      type: 'scale',
+      question: '新しい気づきがありましたか？',
+      min: 1,
+      max: 5,
+      minLabel: 'なかった',
+      maxLabel: 'たくさんあった'
+    },
+    {
+      id: 'ease',
+      type: 'scale',
+      question: '話しやすさはいかがでしたか？',
+      min: 1,
+      max: 5,
+      minLabel: '話しにくかった',
+      maxLabel: '話しやすかった'
+    },
+    {
+      id: 'motivation',
+      type: 'scale',
+      question: '次のセッションへの意欲は？',
+      min: 1,
+      max: 5,
+      minLabel: '低い',
+      maxLabel: '高い'
+    },
+    {
+      id: 'feedback',
+      type: 'text',
+      question: '改善点やご感想があればお聞かせください（任意）'
+    }
+  ]
+};
+
+// アンケート設問取得
+app.get('/api/survey/questions', (req, res) => {
+  res.json(surveyQuestions);
+});
+
+// アンケート回答保存
+app.post('/api/survey/submit', (req, res) => {
+  const { sessionId, userId, week, responses } = req.body;
+
+  try {
+    const surveyData = {
+      sessionId,
+      userId,
+      week,
+      responses,
+      submittedAt: new Date().toISOString()
+    };
+
+    const filename = `survey_${userId}_week${week}_${Date.now()}.json`;
+    const filepath = path.join(surveysDir, filename);
+    fs.writeFileSync(filepath, JSON.stringify(surveyData, null, 2));
+
+    res.json({ success: true, message: 'アンケートを保存しました' });
+  } catch (error) {
+    console.error('Survey save error:', error);
+    res.status(500).json({ error: 'アンケートの保存に失敗しました' });
+  }
+});
+
+// Git pull エンドポイント（現行化用）
+app.post('/api/git/pull', async (req, res) => {
+  const { exec } = require('child_process');
+  const util = require('util');
+  const execPromise = util.promisify(exec);
+
+  try {
+    const { stdout, stderr } = await execPromise('git pull', { cwd: __dirname });
+    res.json({ 
+      success: true, 
+      message: '最新データを取得しました',
+      output: stdout || stderr
+    });
+  } catch (error) {
+    console.error('Git pull error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'データ取得に失敗しました', 
+      details: error.message 
+    });
+  }
 });
 
 app.listen(PORT, () => {

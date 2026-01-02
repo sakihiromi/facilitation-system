@@ -219,12 +219,12 @@ body {
 }
 
 .week-btn.completed::after {
-  content: '✓';
+  content: '📄';
   position: absolute;
   top: 8px;
   right: 8px;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   background: #4caf50;
   color: white;
   border-radius: 50%;
@@ -233,6 +233,17 @@ body {
   justify-content: center;
   font-size: 12px;
   font-weight: 700;
+}
+
+.week-btn.completed .view-report-hint {
+  display: none;
+  font-size: 10px;
+  color: #4caf50;
+  margin-top: 4px;
+}
+
+.week-btn.completed:hover .view-report-hint {
+  display: block;
 }
 
 .week-btn.completed:hover {
@@ -1337,6 +1348,343 @@ body {
 
 .fortune-card.selected .fortune-check {
   display: flex;
+}
+
+/* === Voice Input Button === */
+.voice-btn {
+  width: 48px;
+  height: 48px;
+  background: transparent;
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.voice-btn:hover {
+  border-color: var(--accent-coral);
+  color: var(--accent-coral);
+}
+
+.voice-btn.recording {
+  background: var(--accent-coral);
+  border-color: var(--accent-coral);
+  color: white;
+  animation: pulse-recording 1.5s infinite;
+}
+
+@keyframes pulse-recording {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.4);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 10px rgba(255, 107, 107, 0);
+  }
+}
+
+/* === TTS Controls === */
+.tts-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tts-toggle {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.tts-toggle input {
+  display: none;
+}
+
+.tts-slider {
+  padding: 6px 10px;
+  background: var(--bg-primary);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 16px;
+  transition: all 0.2s;
+}
+
+.tts-toggle input:checked + .tts-slider {
+  background: var(--accent-teal);
+  border-color: var(--accent-teal);
+}
+
+.tts-toggle input:not(:checked) + .tts-slider {
+  opacity: 0.5;
+}
+
+.tts-stop-btn {
+  padding: 6px 10px;
+  background: var(--accent-coral);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tts-stop-btn:hover {
+  transform: scale(1.1);
+}
+
+/* === Report Export Button === */
+.report-export-btn {
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s;
+  margin-top: 12px;
+  width: 100%;
+  justify-content: center;
+}
+
+.report-export-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.report-export-btn.exporting {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.report-export-btn .export-icon {
+  font-size: 18px;
+}
+
+/* === Git Sync Button === */
+.git-sync-btn {
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #2d333b 0%, #22272e 100%);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s;
+  margin-top: 12px;
+  width: 100%;
+  justify-content: center;
+}
+
+.git-sync-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.git-sync-btn.syncing {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.git-sync-btn .sync-icon {
+  font-size: 18px;
+}
+
+.git-sync-btn.syncing .sync-icon {
+  animation: spin 1s linear infinite;
+}
+
+/* === Survey/Questionnaire Styles === */
+.survey-container {
+  background: white;
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  margin: 24px 0;
+  box-shadow: var(--shadow-md);
+}
+
+.survey-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.survey-header h3 {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--primary-color);
+  margin-bottom: 8px;
+}
+
+.survey-disclaimer {
+  background: var(--primary-light);
+  border-left: 4px solid var(--primary-color);
+  padding: 16px;
+  margin-bottom: 24px;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.survey-question {
+  margin-bottom: 24px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.survey-question:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.survey-question label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--text-primary);
+}
+
+.survey-scale {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.survey-scale label {
+  flex: 1;
+  text-align: center;
+  cursor: pointer;
+}
+
+.survey-scale input {
+  display: none;
+}
+
+.survey-scale .scale-option {
+  display: block;
+  padding: 12px 8px;
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  transition: all 0.2s;
+  font-size: 14px;
+}
+
+.survey-scale input:checked + .scale-option {
+  border-color: var(--primary-color);
+  background: var(--primary-light);
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+.survey-scale .scale-option:hover {
+  border-color: var(--primary-color);
+}
+
+.survey-textarea {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 14px;
+  resize: vertical;
+  min-height: 80px;
+}
+
+.survey-textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+/* === Suggestion Card (連想提案) === */
+.suggestion-card {
+  background: linear-gradient(135deg, #fff9e6 0%, #fff5cc 100%);
+  border: 2px solid #ffd700;
+  border-radius: var(--radius-md);
+  padding: 16px 20px;
+  margin: 12px 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.suggestion-icon {
+  font-size: 24px;
+}
+
+.suggestion-content {
+  flex: 1;
+}
+
+.suggestion-text {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.suggestion-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.suggestion-btn {
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.suggestion-btn.accept {
+  background: var(--primary-color);
+  color: white;
+  border: none;
+}
+
+.suggestion-btn.dismiss {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+
+/* === Survey Modal === */
+.modal-survey {
+  max-width: 600px;
+}
+
+.modal-survey .survey-container {
+  box-shadow: none;
+  padding: 0;
+}
+
+.modal-survey .survey-header {
+  margin-bottom: 16px;
+}
+
+.modal-survey .survey-header h3 {
+  font-size: 22px;
+  margin-bottom: 4px;
+}
+
+.modal-survey .survey-header p {
+  color: var(--text-secondary);
+  font-size: 14px;
 }
 
 /* === Responsive === */

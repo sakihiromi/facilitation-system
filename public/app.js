@@ -10,6 +10,12 @@ const state = {
   sessionStartTime: null,
   pendingWeek: null, // モーダルで選択中の週
   existingSessionData: null, // 既存セッション情報
+  // 音声関連
+  isRecording: false,
+  recognition: null,
+  speechSynthesis: window.speechSynthesis,
+  currentUtterance: null,
+  ttsEnabled: localStorage.getItem('ttsEnabled') !== 'false', // デフォルトでON
 };
 
 function generateUserId() {
@@ -73,6 +79,23 @@ function initElements() {
     clearFortuneBtn: document.getElementById('clearFortuneBtn'),
     confirmFortuneBtn: document.getElementById('confirmFortuneBtn'),
     cancelFortuneBtn: document.getElementById('cancelFortuneBtn'),
+
+    // 音声関連
+    voiceBtn: document.getElementById('voiceBtn'),
+    ttsEnabled: document.getElementById('ttsEnabled'),
+    ttsStopBtn: document.getElementById('ttsStopBtn'),
+
+    // Git同期
+    gitSyncBtn: document.getElementById('gitSyncBtn'),
+
+    // レポート出力
+    reportExportBtn: document.getElementById('reportExportBtn'),
+
+    // アンケート関連
+    surveyModal: document.getElementById('surveyModal'),
+    surveyQuestions: document.getElementById('surveyQuestions'),
+    submitSurveyBtn: document.getElementById('submitSurveyBtn'),
+    skipSurveyBtn: document.getElementById('skipSurveyBtn'),
   };
 }
 
@@ -185,6 +208,60 @@ function init() {
     state.priorInfo = e.target.value;
     localStorage.setItem('priorInfo', state.priorInfo);
   });
+
+  // 音声入力の初期化
+  initSpeechRecognition();
+
+  // 読み上げ設定の初期化
+  if (elements.ttsEnabled) {
+    elements.ttsEnabled.checked = state.ttsEnabled;
+    elements.ttsEnabled.addEventListener('change', (e) => {
+      state.ttsEnabled = e.target.checked;
+      localStorage.setItem('ttsEnabled', state.ttsEnabled);
+      if (!state.ttsEnabled) {
+        stopSpeech();
+      }
+    });
+  }
+
+  // 読み上げ停止ボタン
+  if (elements.ttsStopBtn) {
+    elements.ttsStopBtn.addEventListener('click', stopSpeech);
+  }
+
+  // 音声入力ボタン
+  if (elements.voiceBtn) {
+    elements.voiceBtn.addEventListener('mousedown', startRecording);
+    elements.voiceBtn.addEventListener('mouseup', stopRecording);
+    elements.voiceBtn.addEventListener('mouseleave', stopRecording);
+    // タッチデバイス対応
+    elements.voiceBtn.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      startRecording();
+    });
+    elements.voiceBtn.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      stopRecording();
+    });
+  }
+
+  // Git同期ボタン
+  if (elements.gitSyncBtn) {
+    elements.gitSyncBtn.addEventListener('click', handleGitSync);
+  }
+
+  // レポート出力ボタン
+  if (elements.reportExportBtn) {
+    elements.reportExportBtn.addEventListener('click', handleReportExport);
+  }
+
+  // アンケート関連
+  if (elements.submitSurveyBtn) {
+    elements.submitSurveyBtn.addEventListener('click', submitSurvey);
+  }
+  if (elements.skipSurveyBtn) {
+    elements.skipSurveyBtn.addEventListener('click', closeSurveyModal);
+  }
 }
 
 // === Week Access Control ===
@@ -499,6 +576,11 @@ async function endSession() {
     // Show article
     showArticleScreen(data.article, data.theme, state.currentWeek);
 
+    // 少し待ってからアンケートを表示
+    setTimeout(() => {
+      showSurveyModal();
+    }, 2000);
+
   } catch (error) {
     console.error('End session error:', error);
     alert('セッションの終了に失敗しました。');
@@ -508,7 +590,7 @@ async function endSession() {
 }
 
 // === Message Display ===
-function addMessage(role, content) {
+function addMessage(role, content, shouldSpeak = true) {
   const messageDiv = document.createElement('div');
   messageDiv.className = `message ${role}`;
 
@@ -521,6 +603,11 @@ function addMessage(role, content) {
 
   elements.chatMessages.appendChild(messageDiv);
   scrollToBottom();
+
+  // AIの応答を自動で読み上げ
+  if (role === 'assistant' && shouldSpeak) {
+    speakText(content);
+  }
 }
 
 function formatMessage(content) {
@@ -1080,6 +1167,308 @@ function updateWeekButtonStyles() {
 
 //   selectedFortuneTypes = [];
 // }
+
+// === Speech Recognition (音声入力) ===
+function initSpeechRecognition() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    console.log('音声認識はこのブラウザでサポートされていません');
+    if (elements.voiceBtn) {
+      elements.voiceBtn.style.display = 'none';
+    }
+    return;
+  }
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  state.recognition = new SpeechRecognition();
+  state.recognition.lang = 'ja-JP';
+  state.recognition.interimResults = true;
+  state.recognition.continuous = true;
+
+  state.recognition.onresult = (event) => {
+    let transcript = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      transcript += event.results[i][0].transcript;
+    }
+    elements.messageInput.value = transcript;
+    elements.messageInput.style.height = 'auto';
+    elements.messageInput.style.height = Math.min(elements.messageInput.scrollHeight, 150) + 'px';
+  };
+
+  state.recognition.onerror = (event) => {
+    console.error('音声認識エラー:', event.error);
+    stopRecording();
+  };
+
+  state.recognition.onend = () => {
+    if (state.isRecording) {
+      // 録音中に終了した場合は再開
+      try {
+        state.recognition.start();
+      } catch (e) {
+        stopRecording();
+      }
+    }
+  };
+}
+
+function startRecording() {
+  if (!state.recognition || state.isRecording) return;
+
+  try {
+    state.recognition.start();
+    state.isRecording = true;
+    if (elements.voiceBtn) {
+      elements.voiceBtn.classList.add('recording');
+    }
+  } catch (e) {
+    console.error('録音開始エラー:', e);
+  }
+}
+
+function stopRecording() {
+  if (!state.recognition || !state.isRecording) return;
+
+  try {
+    state.recognition.stop();
+    state.isRecording = false;
+    if (elements.voiceBtn) {
+      elements.voiceBtn.classList.remove('recording');
+    }
+  } catch (e) {
+    console.error('録音停止エラー:', e);
+  }
+}
+
+// === Text-to-Speech (読み上げ) ===
+function speakText(text) {
+  if (!state.ttsEnabled || !state.speechSynthesis) return;
+
+  // 既存の読み上げを停止
+  stopSpeech();
+
+  // テキストをクリーンアップ（マークダウン記号を除去）
+  const cleanText = text
+    .replace(/\*\*/g, '')
+    .replace(/\*/g, '')
+    .replace(/^#+\s*/gm, '')
+    .replace(/^-\s*/gm, '')
+    .replace(/^\d+\.\s*/gm, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+
+  state.currentUtterance = new SpeechSynthesisUtterance(cleanText);
+  state.currentUtterance.lang = 'ja-JP';
+  state.currentUtterance.rate = 1.0;
+  state.currentUtterance.pitch = 1.0;
+
+  // 日本語音声を優先選択
+  const voices = state.speechSynthesis.getVoices();
+  const japaneseVoice = voices.find(v => v.lang.includes('ja'));
+  if (japaneseVoice) {
+    state.currentUtterance.voice = japaneseVoice;
+  }
+
+  state.currentUtterance.onstart = () => {
+    if (elements.ttsStopBtn) {
+      elements.ttsStopBtn.style.display = 'block';
+    }
+  };
+
+  state.currentUtterance.onend = () => {
+    if (elements.ttsStopBtn) {
+      elements.ttsStopBtn.style.display = 'none';
+    }
+    state.currentUtterance = null;
+  };
+
+  state.speechSynthesis.speak(state.currentUtterance);
+}
+
+function stopSpeech() {
+  if (state.speechSynthesis) {
+    state.speechSynthesis.cancel();
+  }
+  if (elements.ttsStopBtn) {
+    elements.ttsStopBtn.style.display = 'none';
+  }
+  state.currentUtterance = null;
+}
+
+// 音声合成の声リストを取得（ブラウザによってはonvoiceschangedが必要）
+if (window.speechSynthesis) {
+  window.speechSynthesis.onvoiceschanged = () => {
+    window.speechSynthesis.getVoices();
+  };
+}
+
+// === Survey (アンケート) ===
+async function showSurveyModal() {
+  try {
+    const response = await fetch('/api/survey/questions');
+    const data = await response.json();
+    const questions = data.postSession;
+
+    const container = elements.surveyQuestions;
+    container.innerHTML = '';
+
+    questions.forEach(q => {
+      const questionDiv = document.createElement('div');
+      questionDiv.className = 'survey-question';
+
+      if (q.type === 'scale') {
+        questionDiv.innerHTML = `
+          <label>${q.question}</label>
+          <div class="survey-scale">
+            ${Array.from({ length: q.max - q.min + 1 }, (_, i) => {
+              const value = q.min + i;
+              const label = value === q.min ? q.minLabel : (value === q.max ? q.maxLabel : value);
+              return `
+                <label>
+                  <input type="radio" name="${q.id}" value="${value}">
+                  <span class="scale-option">${label}</span>
+                </label>
+              `;
+            }).join('')}
+          </div>
+        `;
+      } else if (q.type === 'text') {
+        questionDiv.innerHTML = `
+          <label>${q.question}</label>
+          <textarea class="survey-textarea" name="${q.id}" placeholder="ご自由にお書きください..."></textarea>
+        `;
+      }
+
+      container.appendChild(questionDiv);
+    });
+
+    elements.surveyModal.style.display = 'flex';
+  } catch (error) {
+    console.error('Survey load error:', error);
+  }
+}
+
+async function submitSurvey() {
+  const container = elements.surveyQuestions;
+  const responses = {};
+
+  // 各設問の回答を収集
+  container.querySelectorAll('input[type="radio"]:checked').forEach(input => {
+    responses[input.name] = parseInt(input.value);
+  });
+
+  container.querySelectorAll('textarea').forEach(textarea => {
+    if (textarea.value.trim()) {
+      responses[textarea.name] = textarea.value.trim();
+    }
+  });
+
+  try {
+    await fetch('/api/survey/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: state.currentSessionId,
+        userId: state.userId,
+        week: state.currentWeek,
+        responses
+      })
+    });
+
+    closeSurveyModal();
+    alert('アンケートにご協力いただきありがとうございました！');
+  } catch (error) {
+    console.error('Survey submit error:', error);
+    alert('アンケートの送信に失敗しました');
+  }
+}
+
+function closeSurveyModal() {
+  elements.surveyModal.style.display = 'none';
+}
+
+// === Report Export ===
+async function handleReportExport() {
+  const btn = elements.reportExportBtn;
+  if (!btn || btn.classList.contains('exporting')) return;
+
+  // 完了した週があるか確認
+  if (state.completedWeeks.length === 0) {
+    alert('完了したセッションがありません。\n少なくとも1つのセッションを完了してからレポートを出力してください。');
+    return;
+  }
+
+  btn.classList.add('exporting');
+  const originalHTML = btn.innerHTML;
+  btn.innerHTML = '<span class="export-icon">⏳</span><span>生成中...</span>';
+
+  try {
+    const response = await fetch('/api/report/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: state.userId,
+        userName: state.userName || 'ゲスト'
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.success) {
+      btn.innerHTML = '<span class="export-icon">✅</span><span>完了!</span>';
+      alert(`レポートを生成しました！\n\n保存先: ${data.outputPath}\n\n生成されたファイル:\n${data.files.join('\n')}`);
+      setTimeout(() => {
+        btn.innerHTML = originalHTML;
+        btn.classList.remove('exporting');
+      }, 2000);
+    } else {
+      throw new Error(data.error || 'レポート生成に失敗しました');
+    }
+  } catch (error) {
+    console.error('Report export error:', error);
+    btn.innerHTML = '<span class="export-icon">❌</span><span>失敗</span>';
+    setTimeout(() => {
+      btn.innerHTML = originalHTML;
+      btn.classList.remove('exporting');
+    }, 2000);
+    alert('レポート出力に失敗しました: ' + error.message);
+  }
+}
+
+// === Git Sync ===
+async function handleGitSync() {
+  const btn = elements.gitSyncBtn;
+  if (!btn || btn.classList.contains('syncing')) return;
+
+  btn.classList.add('syncing');
+  const originalHTML = btn.innerHTML;
+  btn.innerHTML = '<span class="sync-icon">🔄</span><span>同期中...</span>';
+
+  try {
+    const response = await fetch('/api/git/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const data = await response.json();
+
+    if (data.success) {
+      btn.innerHTML = '<span class="sync-icon">✅</span><span>完了!</span>';
+      setTimeout(() => {
+        btn.innerHTML = originalHTML;
+        btn.classList.remove('syncing');
+      }, 2000);
+    } else {
+      throw new Error(data.error || 'Git同期に失敗しました');
+    }
+  } catch (error) {
+    console.error('Git sync error:', error);
+    btn.innerHTML = '<span class="sync-icon">❌</span><span>失敗</span>';
+    setTimeout(() => {
+      btn.innerHTML = originalHTML;
+      btn.classList.remove('syncing');
+    }, 2000);
+    alert('Git同期に失敗しました: ' + error.message);
+  }
+}
 
 // === Initialize ===
 document.addEventListener('DOMContentLoaded', init);

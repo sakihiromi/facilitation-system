@@ -1,7 +1,7 @@
 {
   "name": "ai-facilitation-system",
   "version": "1.0.0",
-  "description": "AIファシリテーションシステム - 4週間のウェルビーイング1on1",
+  "description": "AIファシリテーションシステム - 5週間のウェルビーイング1on1",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

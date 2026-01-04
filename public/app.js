@@ -507,7 +507,10 @@ function addFortuneSelectionCard() {
 }
 
 async function sendMessage(messageText) {
-  const message = messageText || elements.messageInput.value.trim();
+  // messageText が文字列でない場合（例：クリックイベント）はテキストエリアから取得
+  const message = (typeof messageText === 'string' && messageText) 
+    ? messageText 
+    : elements.messageInput.value.trim();
   if (!message) return;
 
   elements.messageInput.value = '';

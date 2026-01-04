@@ -416,20 +416,16 @@ async function getGreeting() {
       })
     });
 
-    // const data = await response.json();
-    // removeTypingIndicator();
-    // addMessage('assistant', data.message);
-
-    // // Week 2（雑談会）の場合、占いモーダルを表示するオプションを追加
-    // if (state.currentWeek === 2) {
-    //   setTimeout(() => {
-    //     addFortuneSelectionCard();
-    //   }, 1000);
-    // }
-
     const data = await response.json();
     removeTypingIndicator();
-    addMessage('assistant', data.message);
+
+    // エラーレスポンスかどうかチェック
+    if (!response.ok || data.error) {
+      console.error('Greeting API error:', data.error || response.statusText);
+      addMessage('assistant', 'こんにちは！今日のセッションを始めましょう。');
+    } else {
+      addMessage('assistant', data.message || 'こんにちは！今日のセッションを始めましょう。');
+    }
 
     console.log('getGreeting: currentWeek =', state.currentWeek, 'checking if === 2:', state.currentWeek === 2);
 
@@ -611,6 +607,10 @@ function addMessage(role, content, shouldSpeak = true) {
 }
 
 function formatMessage(content) {
+  // contentがnull/undefined/非文字列の場合は空文字を返す
+  if (!content || typeof content !== 'string') {
+    return '<p></p>';
+  }
   // Convert line breaks to paragraphs
   return content
     .split('\n\n')
@@ -1169,6 +1169,9 @@ function updateWeekButtonStyles() {
 // }
 
 // === Speech Recognition (音声入力) ===
+// 音声認識の累積テキストを保持
+let accumulatedTranscript = '';
+
 function initSpeechRecognition() {
   if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
     console.log('音声認識はこのブラウザでサポートされていません');
@@ -1185,23 +1188,40 @@ function initSpeechRecognition() {
   state.recognition.continuous = true;
 
   state.recognition.onresult = (event) => {
-    let transcript = '';
+    let interimTranscript = '';
+    let finalTranscript = '';
+    
     for (let i = event.resultIndex; i < event.results.length; i++) {
-      transcript += event.results[i][0].transcript;
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        finalTranscript += transcript;
+      } else {
+        interimTranscript += transcript;
+      }
     }
-    elements.messageInput.value = transcript;
+    
+    // 確定したテキストを累積
+    if (finalTranscript) {
+      accumulatedTranscript += finalTranscript;
+    }
+    
+    // 累積テキスト + 現在の中間結果を表示
+    elements.messageInput.value = accumulatedTranscript + interimTranscript;
     elements.messageInput.style.height = 'auto';
     elements.messageInput.style.height = Math.min(elements.messageInput.scrollHeight, 150) + 'px';
   };
 
   state.recognition.onerror = (event) => {
     console.error('音声認識エラー:', event.error);
-    stopRecording();
+    // no-speech エラーは無視（途切れただけ）
+    if (event.error !== 'no-speech') {
+      stopRecording();
+    }
   };
 
   state.recognition.onend = () => {
     if (state.isRecording) {
-      // 録音中に終了した場合は再開
+      // 録音中に終了した場合は再開（累積テキストは保持される）
       try {
         state.recognition.start();
       } catch (e) {
@@ -1215,6 +1235,8 @@ function startRecording() {
   if (!state.recognition || state.isRecording) return;
 
   try {
+    // 録音開始時に累積テキストをリセット（既存の入力は保持）
+    accumulatedTranscript = elements.messageInput.value;
     state.recognition.start();
     state.isRecording = true;
     if (elements.voiceBtn) {
